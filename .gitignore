@@ -1,0 +1,38 @@
+# ─── Environment files ─────────────────────────────────────────────────────────
+# FIXED: C-1 — secrets must never be committed
+.env
+.env.*
+!.env.test
+!.env.example
+
+# ─── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+**/node_modules/
+
+# ─── Databases ─────────────────────────────────────────────────────────────────
+prisma/dev.db
+*.db
+*.db-journal
+
+# ─── Build artifacts ───────────────────────────────────────────────────────────
+client/dist/
+server/dist/
+dist/
+build/
+
+# ─── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ─── Backup files ──────────────────────────────────────────────────────────────
+churchfinance_backup_*.json
+
+# ─── Editor / OS cruft ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

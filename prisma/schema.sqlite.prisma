@@ -1,0 +1,203 @@
+// SQLite-compatible schema for running the test suite without a MySQL server.
+// To use: copy this file over schema.prisma, set DATABASE_URL="file:./test.db"
+// in .env.test, then run `npx prisma db push` and `npx prisma generate`.
+// All enums are replaced with String columns (SQLite has no enum type) and
+// @db.Decimal / @db.Text annotations are removed (also MySQL-specific).
+// The Prisma client API is identical, so all tests pass against both engines.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  passwordHash    String
+  firstName       String
+  lastName        String
+  role            String   @default("PARTNER")
+  phone           String?
+  isActive        Boolean  @default(true)
+  lastLoginAt     DateTime?
+  // FIXED: C-3 — single-use password reset token (stored as hash) + expiry
+  passwordResetToken  String?   @unique
+  passwordResetExpiry DateTime?
+  // FIXED: H-2 — account lockout after repeated failed logins
+  failedLoginAttempts Int      @default(0)
+  lockedUntil         DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tithes              Tithe[]
+  offerings           Offering[]
+  recordedExpenses    Expense[]              @relation("ExpenseRecorder")
+  approvedExpenses    Expense[]              @relation("ExpenseApprover")
+  payments            Payment[]
+  auditLogs           AuditLog[]
+  createdHarambees    Harambee[]              @relation("HarambeeCreator")
+  harambeeContributions HarambeeContribution[] @relation("HarambeeContributor")
+  confirmedPayments   Payment[]              @relation("PaymentConfirmer")
+  @@map("users")
+}
+
+model Tithe {
+  id              String         @id @default(uuid())
+  contributorName String
+  amount          Decimal
+  date            DateTime
+  paymentMethod   String         @default("CASH")
+  mpesaReceiptNo  String?
+  bankName        String?
+  chequeNumber    String?
+  idNumber        String?
+  notes           String?
+  status          String         @default("CONFIRMED")
+  recordedBy      String
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  recordedByUser  User           @relation(fields: [recordedBy], references: [id])
+  @@index([date])
+  @@index([status])
+  @@index([date, status])
+  @@map("tithes")
+}
+
+model Offering {
+  id              String         @id @default(uuid())
+  contributorName String
+  amount          Decimal
+  date            DateTime
+  serviceType     String
+  paymentMethod   String         @default("CASH")
+  mpesaReceiptNo  String?
+  notes           String?
+  status          String         @default("CONFIRMED")
+  recordedBy      String
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  recordedByUser  User           @relation(fields: [recordedBy], references: [id])
+  @@index([date])
+  @@index([status])
+  @@index([date, status])
+  @@map("offerings")
+}
+
+model Expense {
+  id              String          @id @default(uuid())
+  description     String
+  amount          Decimal
+  date            DateTime
+  category        String
+  paymentMethod   String          @default("CASH")
+  recipientName   String?
+  mpesaReceiptNo  String?
+  notes           String?
+  status          String          @default("CONFIRMED")
+  recordedBy      String
+  approvedBy      String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  recordedByUser  User            @relation("ExpenseRecorder", fields: [recordedBy], references: [id])
+  approvedByUser  User?           @relation("ExpenseApprover", fields: [approvedBy], references: [id])
+  @@index([date])
+  @@index([status])
+  @@index([date, status])
+  @@map("expenses")
+}
+
+model Harambee {
+  id              String         @id @default(uuid())
+  title           String
+  description     String?
+  targetAmount    Decimal
+  currentAmount   Decimal        @default(0)
+  startDate       DateTime
+  endDate         DateTime?
+  status          String         @default("ACTIVE")
+  createdBy       String
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  contributions       HarambeeContribution[]
+  payments           Payment[]
+  createdByUser     User               @relation("HarambeeCreator", fields: [createdBy], references: [id])
+  @@map("harambees")
+}
+
+model HarambeeContribution {
+  id              String         @id @default(uuid())
+  harambeeId      String
+  contributorName String
+  amount          Decimal
+  date            DateTime
+  paymentMethod   String         @default("CASH")
+  mpesaReceiptNo  String?
+  notes           String?
+  recordedBy      String
+  createdAt       DateTime       @default(now())
+  harambee        Harambee       @relation(fields: [harambeeId], references: [id], onDelete: Cascade)
+  recordedByUser  User           @relation("HarambeeContributor", fields: [recordedBy], references: [id])
+  @@map("harambee_contributions")
+}
+
+model Payment {
+  id              String         @id @default(uuid())
+  userId          String
+  amount          Decimal
+  paymentType     String
+  harambeeId      String?
+  paymentMethod   String         @default("MPESA")
+  mpesaReceiptNo  String?
+  phoneNumber     String?
+  status          String         @default("PENDING")
+  rejectionReason String?
+  confirmedBy     String?
+  confirmedAt     DateTime?
+  checkoutRequestId String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user            User           @relation(fields: [userId], references: [id])
+  harambee        Harambee?      @relation(fields: [harambeeId], references: [id])
+  confirmedByUser User?          @relation("PaymentConfirmer", fields: [confirmedBy], references: [id])
+  @@map("payments")
+}
+
+model ChurchService {
+  id          String        @id @default(uuid())
+  name        String
+  dayOfWeek   String
+  time        String
+  serviceDate DateTime?
+  topic       String?
+  speaker     String?
+  programmer  String?
+  leadMinistrant String?
+  reader      String?
+  notes       String?
+  status      String        @default("SCHEDULED")
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  @@map("church_services")
+}
+
+model AuditLog {
+  id              String       @id @default(uuid())
+  userId          String
+  action          String
+  module          String
+  recordId        String?
+  details         String?
+  ipAddress       String?
+  createdAt       DateTime     @default(now())
+  user            User         @relation(fields: [userId], references: [id])
+  @@index([userId])
+  @@index([module])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+

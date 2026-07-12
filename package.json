@@ -1,0 +1,30 @@
+{
+  "name": "churchfinance-pro",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && node index.js",
+    "dev:client": "cd client && npx vite --host",
+    "build": "cd client && npx vite build",
+    "start": "cd server && NODE_ENV=production node index.js",
+    "db:migrate": "npx prisma migrate dev",
+    "db:seed": "node scripts/seed.js",
+    "db:studio": "npx prisma studio",
+    "postinstall": "npx prisma generate",
+    "test:server": "cd server && npm test",
+    "test:server:unit": "cd server && npx jest --testPathPattern=unit --runInBand",
+    "test:server:integration": "cd server && npx jest --testPathPattern=integration --runInBand --forceExit",
+    "test:client": "cd client && npx vitest run",
+    "test:all": "npm run test:server && npm run test:client",
+    "test:coverage": "cd server && npx jest --coverage --runInBand --forceExit && cd ../client && npx vitest run --coverage"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "prisma": "^5.22.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^3.0.3"
+  }
+}

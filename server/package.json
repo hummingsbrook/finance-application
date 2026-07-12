@@ -1,0 +1,39 @@
+{
+  "name": "churchfinance-pro-server",
+  "version": "1.0.0",
+  "description": "ChurchFinance Pro — Server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "jest --runInBand --forceExit",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --runInBand --forceExit --coverage"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "csrf-csrf": "^3.2.2",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "express-rate-limit": "^7.5.0",
+    "ip-range-check": "^0.0.2",
+    "nodemailer": "^6.9.16"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9",
+    "jest": "29",
+    "supertest": "7",
+    "@types/jest": "29"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/__tests__/**/*.test.js"],
+    "setupFilesAfterEnv": ["<rootDir>/__tests__/setup.js"],
+    "testTimeout": 30000
+  }
+}
