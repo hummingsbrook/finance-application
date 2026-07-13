@@ -67,11 +67,11 @@ if (!isTestEnv) {
     getSecret: () => csrfSecret,
     cookieName: 'csrf-token',
     cookieOptions: {
-      httpOnly: false,                              // must be readable by JS
-      sameSite: isProduction ? 'Strict' : 'Lax',
-      secure:   isProduction,
-      path:     '/',
-    },
+    httpOnly: false,
+    sameSite: isProduction ? 'None' : 'Lax',
+    secure: isProduction,
+    path: '/',
+        },
     size: 64,
     ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
   });
@@ -88,6 +88,7 @@ const CSRF_EXEMPT_PATHS = new Set([
   '/auth/forgot-password',
   '/auth/reset-password',
   '/health',
+  '/csrf-token',
 ]);
 
 // Apply CSRF validation to every /api route that is not explicitly exempted.
@@ -108,22 +109,6 @@ app.use('/api', (req, res, next) => {
 // token+hash pair. Without this, csrf-csrf v3 reuses the existing cookie
 // on GET responses but may throw on a stale/mismatched cookie (race between
 // concurrent responses), causing the next POST to fail validation.
-app.use('/api', (req, res, next) => {
-  if (!generateToken) return next();
-
-  const originalJson = res.json.bind(res);
-  res.json = function (body) {
-    try {
-      const token = generateToken(req, res, true); // overwrite=true: always emit a fresh, coherent pair
-      if (token) res.setHeader('x-csrf-token', token);
-    } catch (_e) {
-      // Never block the response if token generation fails.
-    }
-    return originalJson(body);
-  };
-
-  next();
-});
 
 // ─── API Routes ────────────────────────────────────────────────────────────────
 const authRoutes    = require('./modules/auth/routes');
@@ -199,7 +184,34 @@ app.use('/api/admin',     backupRoutes);
 app.get('/api/health', (req, res) => {
   res.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } });
 });
+app.get('/api/csrf-token', (req, res) => {
+  if (!generateToken) {
+    return res.status(500).json({
+      success: false,
+      message: 'CSRF protection is not initialized.',
+    });
+  }
 
+  try {
+    const token = generateToken(req, res);
+
+    res.setHeader('x-csrf-token', token);
+
+    res.json({
+      success: true,
+      data: {
+        csrfToken: token,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate CSRF token.',
+    });
+  }
+});
 // ─── Production: Serve React Frontend ──────────────────────────────────────────
 if (isProduction) {
   const clientDistPath = path.join(__dirname, '..', 'client', 'dist');

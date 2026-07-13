@@ -11,24 +11,35 @@ const api = axios.create({
 // first response we see and echo it back as `X-CSRF-Token` on every
 // subsequent non-GET request.
 let csrfToken = null;
+// Track an in-flight CSRF fetch so concurrent requests don't each trigger one.
+let csrfFetchPromise = null;
 
 function isWriteMethod(method) {
   const m = (method || 'GET').toUpperCase();
   return m !== 'GET' && m !== 'HEAD' && m !== 'OPTIONS';
 }
 
-// Attach the token (if we have one) before the request goes out.
-api.interceptors.request.use((config) => {
+// Fetch a fresh CSRF token from the dedicated endpoint.
+// Returns the token string, or null on failure.
+async function fetchCsrfToken() {
+  if (csrfFetchPromise) return csrfFetchPromise;
+  csrfFetchPromise = api.get('/csrf-token')
+    .then(res => {
+      const token = res.headers?.['x-csrf-token'] || res.data?.csrfToken;
+      if (token) csrfToken = token;
+      return csrfToken;
+    })
+    .catch(() => null)
+    .finally(() => { csrfFetchPromise = null; });
+  return csrfFetchPromise;
+}
+
+// Attach the token before every write request.
+// If we don't have one yet, fetch it first (covers page-reload scenarios
+// where the user is already authenticated but no token has been issued).
+api.interceptors.request.use(async (config) => {
   if (isWriteMethod(config.method)) {
-    // Try header-captured token first (set by the response interceptor below),
-    // then fall back to reading the cookie directly.
-    // FIXED: the csrf-token cookie contains "rawToken|hash" — only the left
-    // part (before the pipe) is the value the server validates against the
-    // X-CSRF-Token header. Sending the full cookie string always fails.
-    if (!csrfToken && typeof document !== 'undefined') {
-      const match = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]+)/);
-      if (match) csrfToken = decodeURIComponent(match[1]).split('|')[0];
-    }
+    if (!csrfToken) await fetchCsrfToken();
     if (csrfToken) {
       config.headers = config.headers || {};
       config.headers['X-CSRF-Token'] = csrfToken;
@@ -51,19 +62,10 @@ const AUTH_ENDPOINTS = [
 // After this interceptor, res.data is the inner payload directly.
 api.interceptors.response.use(
   (response) => {
-    // FIXED: C-5 — capture the CSRF token from the response header
+    // Capture CSRF token if the server includes it in the response header
+    // (e.g. from the dedicated /csrf-token endpoint).
     const headerToken = response.headers['x-csrf-token'];
-    if (headerToken) {
-      csrfToken = headerToken;
-    }
-    // Also fall back to the cookie (set by the server) if the header is absent.
-    // FIXED: same as above — strip the |hash suffix, keep only the raw token.
-    if (!csrfToken && typeof document !== 'undefined') {
-      const match = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]+)/);
-      if (match) {
-        csrfToken = decodeURIComponent(match[1]).split('|')[0];
-      }
-    }
+    if (headerToken) csrfToken = headerToken;
 
     const { data } = response;
     // If the response has the standard envelope, unwrap it

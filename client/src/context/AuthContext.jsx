@@ -38,6 +38,11 @@ export function AuthProvider({ children }) {
     async (email, password, keepSignedIn = false) => {
       const res = await api.post('/auth/signin', { email, password, keepSignedIn });
       const userData = res.data.user || res.data;
+      // Fetch a fresh, stable CSRF token immediately after login.
+      // This avoids the race condition where concurrent GET responses each
+      // issued a new token+cookie pair, invalidating each other and causing
+      // EBADCSRFTOKEN on the next POST.
+      try { await api.get('/csrf-token'); } catch (_) {}
       const dashboardPath = ROLE_DASHBOARD_MAP[userData.role] || '/signin';
       // Full page navigation so the JWT cookie is already set
       // when ProtectedRoute checks auth on the next render
