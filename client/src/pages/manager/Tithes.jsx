@@ -8,7 +8,6 @@ import Card from '../../components/ui/Card';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import KpiCard from '../../components/ui/KpiCard';
 import UniversalTable from '../../components/ui/UniversalTable';
-import TitheEditOverlay from '../../components/ui/TitheEditOverlay';
 import ReactECharts from 'echarts-for-react';
 import { useFormValidation } from '../../hooks/useFormValidation';
 
@@ -55,14 +54,16 @@ export default function Tithes() {
   const now = new Date();
 
   // Period filter — drives KPI cards and chart
-  const [periodMode, setPeriodMode] = useState('Monthly');
+  const [periodMode, setPeriodMode] = useState('Monthly');  // 'Monthly' | 'Yearly'
   const [periodYear, setPeriodYear] = useState(now.getFullYear());
   const [periodMonth, setPeriodMonth] = useState(now.getMonth() + 1);
   const [periodHasActive, setPeriodHasActive] = useState(false);
 
   // Table filter — drives the tithes list independently
-  const [tableSearch, setTableSearch] = useState('');
-  const [tablePaymentMethod, setTablePaymentMethod] = useState('');
+  const [tableSearch, setTableSearch] = useState('');       // raw input value — not sent to API
+  const [debouncedSearch, setDebouncedSearch] = useState(''); // debounced — sent to API
+  const searchDebounceRef = useRef(null);
+  const [tablePaymentMethod, setTablePaymentMethod] = useState('');  // '' | 'CASH' | 'MPESA' | 'BANK_TRANSFER'
   const [tableYear, setTableYear]   = useState('');
   const [tableMonth, setTableMonth] = useState('');
   const [tableSortBy, setTableSortBy] = useState('date_desc');
@@ -70,27 +71,24 @@ export default function Tithes() {
 
   const { fieldErrors, validate, clearFieldError, clearAllErrors } = useFormValidation();
 
-  // ─── Scroll preservation using a ref — no page reload on filter change ───
-  const scrollRef = useRef(null);
-  const saveScroll = () => {
+  // ─── Scroll preservation (prevents the page jumping to top on filter change) ───
+  const saveScroll    = () => document.getElementById('main-scroll')?.scrollTop ?? 0;
+  const restoreScroll = (pos) => {
     const el = document.getElementById('main-scroll');
-    scrollRef.current = el ? el.scrollTop : 0;
-  };
-  const restoreScroll = () => {
-    const el = document.getElementById('main-scroll');
-    if (el && scrollRef.current != null) el.scrollTop = scrollRef.current;
+    if (el) el.scrollTop = pos;
   };
 
   // Summary state for Records tab
   const [summary, setSummary] = useState(null);
 
-  // Yearly summary state
+  // Yearly summary state — fetched separately when in Yearly mode
   const [yearlySummary, setYearlySummary] = useState(null);
 
-  // ─── Edit overlay state ───
-  const [editingTithe, setEditingTithe] = useState(null);
+  // Edit state
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
 
-  // Delete confirmation state
+  // Delete confirmation state — drives the ConfirmDialog.
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   // ─── Fetch recent tithes for the Record tab sidebar ───
@@ -107,14 +105,15 @@ export default function Tithes() {
     fetchRecentTithes();
   }, [fetchRecentTithes]);
 
-  // ─── Fetch tithes list for Records tab ───
+  // ─── Fetch tithes list for Records tab (table filter only — no date range) ───
   const fetchTithesList = useCallback(async () => {
-    saveScroll();
+    const pos = saveScroll();
     setLoading(true);
     try {
       const params = { limit: 12, page: tablePage };
+
       if (tablePaymentMethod) params.paymentMethod = tablePaymentMethod;
-      if (tableSearch.trim()) params.contributorName = tableSearch.trim();
+      if (debouncedSearch.trim()) params.contributorName = debouncedSearch.trim();
       if (tableYear)  params.year  = tableYear;
       if (tableMonth) params.month = tableMonth;
       if (tableSortBy) params.sortBy = tableSortBy;
@@ -127,10 +126,9 @@ export default function Tithes() {
       showError(err?.response?.data?.message || 'Failed to fetch tithes');
     } finally {
       setLoading(false);
-      // Use requestAnimationFrame so the DOM has painted before we scroll
-      requestAnimationFrame(restoreScroll);
+      restoreScroll(pos);
     }
-  }, [tablePaymentMethod, tableSearch, tableYear, tableMonth, tableSortBy, tablePage]);
+  }, [tablePaymentMethod, debouncedSearch, tableYear, tableMonth, tableSortBy, tablePage]);
 
   // ─── Fetch summary for KPI cards and chart ───
   const fetchSummary = useCallback(async () => {
@@ -140,11 +138,11 @@ export default function Tithes() {
       });
       setSummary(res.data?.summary || null);
     } catch (err) {
-      // non-critical
+      // non-critical — KPI cards just won't show data
     }
   }, [periodYear, periodMonth]);
 
-  // ─── Fetch yearly summary ───
+  // ─── Fetch yearly summary — aggregates last 5 years for the Yearly chart ───
   const fetchYearlySummary = useCallback(async () => {
     try {
       const res = await api.get('/tithes/summary/yearly', {
@@ -156,29 +154,42 @@ export default function Tithes() {
     }
   }, [periodYear]);
 
+  // Re-fetch summary + chart whenever period filter changes
   useEffect(() => {
     if (activeTab === 'records') {
       fetchSummary();
     }
   }, [activeTab, fetchSummary]);
 
+  // Re-fetch table whenever table filter changes
   useEffect(() => {
     if (activeTab === 'records') {
       fetchTithesList();
     }
   }, [activeTab, fetchTithesList]);
 
-  // Reset table page when table filters change (but not on page change itself)
+  // Reset table page when table filters change
   useEffect(() => {
     setTablePage(1);
-  }, [tableSearch, tablePaymentMethod, tableYear, tableMonth, tableSortBy]);
+  }, [debouncedSearch, tablePaymentMethod, tableYear, tableMonth, tableSortBy]);
 
+  // Debounce search input — only update debouncedSearch 400ms after the user stops typing
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setDebouncedSearch(tableSearch);
+    }, 400);
+    return () => clearTimeout(searchDebounceRef.current);
+  }, [tableSearch]);
+
+  // Fetch yearly summary when in Yearly mode and on the records tab
   useEffect(() => {
     if (activeTab === 'records' && periodMode === 'Yearly') {
       fetchYearlySummary();
     }
   }, [activeTab, periodMode, periodYear, fetchYearlySummary]);
 
+  // Track whether period filter has active non-default values
   useEffect(() => {
     const defaultYear = new Date().getFullYear();
     const defaultMonth = new Date().getMonth() + 1;
@@ -197,6 +208,7 @@ export default function Tithes() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Per-field validation
     const errors = {};
     if (!form.contributorName?.trim()) errors.contributorName = 'Contributor name is required.';
     const parsedAmount = parseFloat(form.amount);
@@ -218,7 +230,7 @@ export default function Tithes() {
         contributorName: form.contributorName,
         amount: parseFloat(form.amount),
         date: form.date,
-        paymentMethod: form.paymentMethod === 'bank' ? 'BANK_TRANSFER' : paymentMethod.toUpperCase(),
+        paymentMethod: form.paymentMethod === 'bank' ? 'BANK_TRANSFER' : form.paymentMethod.toUpperCase(),
         mpesaReceiptNo: form.mpesaReceiptNo || null,
         bankName: form.bankName || null,
         chequeNumber: form.chequeNumber || null,
@@ -247,11 +259,12 @@ export default function Tithes() {
     }
   };
 
-  // ─── Records tab: delete handler ───
+  // ─── Records tab: delete handler — opens the ConfirmDialog (no api call yet) ───
   const handleDelete = (id) => {
     setConfirmDeleteId(id);
   };
 
+  // ─── Records tab: actual delete, triggered by ConfirmDialog confirm ───
   const handleConfirmDelete = async () => {
     if (!confirmDeleteId) return;
     try {
@@ -266,14 +279,57 @@ export default function Tithes() {
     }
   };
 
-  // ─── Overlay edit save handler ───
-  const handleEditSave = async (id, payload) => {
-    await api.put(`/tithes/${id}`, payload);
-    fetchTithesList();
-    fetchSummary();
+  // ─── Records tab: inline edit handlers ───
+  const handleEditClick = (t) => {
+    setEditingId(t.id);
+    const method = (t.paymentMethod || 'CASH').toLowerCase();
+    setEditForm({
+      contributorName: t.contributorName || '',
+      amount: t.amount != null ? String(t.amount) : '',
+      date: t.date ? t.date.split('T')[0] : '',
+      paymentMethod: method === 'bank_transfer' ? 'bank' : method,
+      mpesaReceiptNo: t.mpesaReceiptNo || '',
+      bankName: t.bankName || '',
+      chequeNumber: t.chequeNumber || '',
+      idNumber: t.idNumber || '',
+      notes: t.notes || '',
+      status: t.status || 'CONFIRMED',
+    });
+  };
+
+  const handleEditChange = (e) => {
+    setEditForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleEditSave = async (id) => {
+    try {
+      await api.put(`/tithes/${id}`, {
+        contributorName: editForm.contributorName,
+        amount: parseFloat(editForm.amount),
+        date: editForm.date,
+        paymentMethod: editForm.paymentMethod === 'bank' ? 'BANK_TRANSFER' : editForm.paymentMethod.toUpperCase(),
+        mpesaReceiptNo: editForm.mpesaReceiptNo || null,
+        bankName: editForm.bankName || null,
+        chequeNumber: editForm.chequeNumber || null,
+        idNumber: editForm.idNumber || null,
+        notes: editForm.notes || null,
+      });
+      setEditingId(null);
+      setEditForm({});
+      fetchTithesList();
+      fetchSummary();
+    } catch (err) {
+      showError(err?.response?.data?.message || 'Failed to update tithe');
+    }
+  };
+
+  const handleEditCancel = () => {
+    setEditingId(null);
+    setEditForm({});
   };
 
   // ─── Chart helpers ───
+  // Monthly: last 6 months from summary
   const buildChartData = () => {
     if (!summary?.monthlyTrend) return [];
     return summary.monthlyTrend.slice(-6).map((m) => ({
@@ -282,10 +338,12 @@ export default function Tithes() {
     }));
   };
 
+  // Chart data selector — Yearly uses the separately-fetched yearlySummary
   const chartData = periodMode === 'Yearly'
     ? (yearlySummary?.yearlyTrend || []).map((y) => ({ label: y.label, total: y.total }))
     : buildChartData();
 
+  // KPI computed values — Yearly mode pulls from yearlySummary (new endpoint)
   const yearlyTotal  = yearlySummary?.totalThisYear  || 0;
   const yearlyCount  = yearlySummary?.countThisYear  || 0;
   const yearlyAvg    = yearlySummary?.avgThisYear    || 0;
@@ -311,9 +369,11 @@ export default function Tithes() {
     ? `Per transaction average for ${periodYear}`
     : 'Per transaction average';
 
+  // ─── Summary computed values for sidebar (Record tab) ───
   const thisMonthTotal = summary?.totalThisMonth || 0;
   const thisMonthCount = summary?.countThisMonth || 0;
 
+  // ─── Table display helpers ───
   const sourceLabel = (method) => {
     switch ((method || '').toUpperCase()) {
       case 'MPESA': return 'M-Pesa';
@@ -336,6 +396,7 @@ export default function Tithes() {
   const handleExportCSV = async () => {
     setExportLoading(true);
     try {
+      // Fetch ALL matching records across pages (server caps at 100 per request)
       const PAGE_SIZE = 100;
       let allRecords = [];
       let currentPage = 1;
@@ -344,7 +405,7 @@ export default function Tithes() {
       do {
         const params = { limit: PAGE_SIZE, page: currentPage };
         if (tablePaymentMethod) params.paymentMethod = tablePaymentMethod;
-        if (tableSearch.trim()) params.contributorName = tableSearch.trim();
+        if (debouncedSearch.trim()) params.contributorName = debouncedSearch.trim();
         if (tableYear)  params.year  = tableYear;
         if (tableMonth) params.month = tableMonth;
         if (tableSortBy) params.sortBy = tableSortBy;
@@ -358,9 +419,17 @@ export default function Tithes() {
       } while (allRecords.length < fetchedTotal);
 
       const headers = [
-        'Date', 'Contributor', 'ID Number', 'Payment Method',
-        'M-Pesa Receipt No.', 'Bank Name', 'Cheque Number',
-        'Amount (KES)', 'Status', 'Notes', 'Recorded By',
+        'Date',
+        'Contributor',
+        'ID Number',
+        'Payment Method',
+        'M-Pesa Receipt No.',
+        'Bank Name',
+        'Cheque Number',
+        'Amount (KES)',
+        'Status',
+        'Notes',
+        'Recorded By',
       ];
       const rows = allRecords.map((t) => [
         formatDate(t.date),
@@ -419,6 +488,8 @@ export default function Tithes() {
           </button>
         ))}
       </div>
+
+      {/* Error Banner */}
 
       {/* ═══════════════════ RECORD TAB ═══════════════════ */}
       {activeTab === 'record' && (
@@ -504,6 +575,7 @@ export default function Tithes() {
                   </div>
                 </div>
 
+                {/* M-Pesa conditional field */}
                 {form.paymentMethod === 'mpesa' && (
                   <div>
                     <Input
@@ -518,6 +590,7 @@ export default function Tithes() {
                   </div>
                 )}
 
+                {/* Bank conditional fields */}
                 {form.paymentMethod === 'bank' && (
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -595,6 +668,7 @@ export default function Tithes() {
 
           {/* Sidebar */}
           <aside className="col-span-12 lg:col-span-5 space-y-6">
+            {/* Recent Submissions */}
             <div className="bg-surface-container-lowest p-4 md:p-6 rounded-xl border border-outline-variant/30 shadow-sm">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-headline-md text-on-surface">Recent Submissions</h3>
@@ -631,6 +705,7 @@ export default function Tithes() {
               </div>
             </div>
 
+            {/* Stewardship Card */}
             <div className="relative overflow-hidden bg-primary-container rounded-xl p-6 text-on-primary shadow-lg">
               <div className="absolute -right-12 -top-12 opacity-10">
                 <span className="material-symbols-outlined text-[180px]">church</span>
@@ -651,6 +726,7 @@ export default function Tithes() {
               </div>
             </div>
 
+            {/* Tips */}
             <div className="bg-surface-container-low p-6 rounded-xl border border-outline-variant/30">
               <h4 className="text-label-md text-primary mb-3">Recording Tips</h4>
               <ul className="space-y-3">
@@ -679,8 +755,9 @@ export default function Tithes() {
             </div>
           ) : (
             <>
-              {/* ─── PERIOD FILTER ─── */}
+              {/* ─── PERIOD FILTER (drives KPI + chart) ─── */}
               <div className="bg-surface p-4 rounded-xl border border-outline-variant shadow-sm">
+                {/* Active badge + clear */}
                 <div className="flex justify-end mb-3">
                   {periodHasActive && (
                     <div className="flex items-center gap-1">
@@ -703,6 +780,7 @@ export default function Tithes() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  {/* Monthly / Yearly toggle */}
                   <div className="inline-flex bg-surface-container-low rounded-lg p-1 h-10">
                     {['Monthly', 'Yearly'].map((mode) => (
                       <button
@@ -720,6 +798,7 @@ export default function Tithes() {
                     ))}
                   </div>
 
+                  {/* Year selector */}
                   <div className="flex items-center gap-2">
                     <label className="text-label-sm text-on-surface-variant whitespace-nowrap">Year</label>
                     <select
@@ -733,6 +812,7 @@ export default function Tithes() {
                     </select>
                   </div>
 
+                  {/* Month selector — only when Monthly */}
                   {periodMode === 'Monthly' && (
                     <div className="flex items-center gap-2">
                       <label className="text-label-sm text-on-surface-variant whitespace-nowrap">Month</label>
@@ -750,7 +830,7 @@ export default function Tithes() {
                 </div>
               </div>
 
-              {/* ─── KPI CARDS ─── */}
+              {/* ─── 1. KPI CARDS ROW ─── */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <KpiCard
                   icon="trending_up"
@@ -794,7 +874,7 @@ export default function Tithes() {
                 />
               </div>
 
-              {/* ─── TITHE TRENDS CHART ─── */}
+              {/* ─── 3. TITHE TRENDS CHART ─── */}
               <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 overflow-hidden">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-headline-md text-on-surface">Tithe Trends</h3>
@@ -903,7 +983,7 @@ export default function Tithes() {
                 </div>
               </div>
 
-              {/* ─── TABLE FILTER ─── */}
+              {/* ─── TABLE FILTER (drives table only) ─── */}
               <section className="bg-surface-container-lowest border border-outline-variant/20 rounded-xl card-shadow p-6">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-2">
@@ -1013,7 +1093,7 @@ export default function Tithes() {
                 </div>
               </section>
 
-              {/* ─── DATA TABLE ─── */}
+              {/* ─── 4. DATA TABLE ─── */}
               <UniversalTable
                 columns={[
                   { key: 'date', label: 'Date' },
@@ -1039,66 +1119,155 @@ export default function Tithes() {
                     <span className="text-on-surface-variant/50">({totalRows} records)</span>
                   </span>
                 }
-                renderRow={(t, idx) => (
-                  <tr
-                    key={t.id}
-                    className={`hover:bg-surface-container transition-colors ${
-                      idx % 2 === 1 ? 'bg-surface-container-low/30' : ''
-                    }`}
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap text-body-md text-on-surface">
-                      {formatDate(t.date)}
-                    </td>
-                    <td className="px-6 py-4">
-                      {categoryBadge(t.notes)}
-                    </td>
-                    <td className="px-6 py-4 text-right font-bold text-primary text-body-md whitespace-nowrap">
-                      {formatNumberTwoDecimals(t.amount)}
-                    </td>
-                    <td className="px-6 py-4 text-body-md text-on-surface">
-                      {sourceLabel(t.paymentMethod)}
-                    </td>
-                    <td className="px-6 py-4 font-medium text-body-md text-on-surface">
-                      {t.contributorName}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-body-sm text-on-surface-variant truncate block max-w-[200px]">
-                        {t.notes || '—'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => setEditingTithe(t)}
-                          className="p-2 hover:bg-surface-container-high rounded-lg text-primary"
-                          title="Edit"
-                        >
-                          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>edit</span>
-                        </button>
-                        <button
-                          onClick={() => handleDelete(t.id)}
-                          className="p-2 hover:bg-error-container/20 rounded-lg text-error"
-                          title="Delete"
-                        >
-                          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>delete</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
+                renderRow={(t, idx) => {
+                  if (editingId === t.id) {
+                    // ─── EDIT ROW ───
+                    return (
+                      <tr key={t.id} className="border-b border-outline-variant/30">
+                        <td className="px-6 py-4">
+                          <input
+                            type="date"
+                            name="date"
+                            value={editForm.date}
+                            onChange={handleEditChange}
+                            className="w-full px-3 py-1.5 border rounded-lg text-body-sm text-on-surface outline-none border-outline-variant focus:border-secondary"
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          <input
+                            type="text"
+                            name="notes"
+                            value={editForm.notes}
+                            onChange={handleEditChange}
+                            placeholder="Building, Standard..."
+                            className="w-full px-3 py-1.5 border rounded-lg text-body-sm text-on-surface outline-none border-outline-variant focus:border-secondary"
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          <input
+                            type="number"
+                            name="amount"
+                            value={editForm.amount}
+                            onChange={handleEditChange}
+                            className="w-full px-3 py-1.5 border rounded-lg text-body-sm text-on-surface text-right outline-none border-outline-variant focus:border-secondary"
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          {/* Compact payment method toggle */}
+                          <div className="flex p-0.5 bg-surface-container rounded-lg">
+                            {['cash', 'mpesa', 'bank'].map((method) => (
+                              <button
+                                key={method}
+                                type="button"
+                                onClick={() => setEditForm((p) => ({ ...p, paymentMethod: method }))}
+                                className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${
+                                  editForm.paymentMethod === method
+                                    ? 'bg-surface-container-lowest text-primary shadow-sm'
+                                    : 'text-on-surface-variant'
+                                }`}
+                              >
+                                {method === 'cash' ? 'Cash' : method === 'mpesa' ? 'M-Pesa' : 'Bank'}
+                              </button>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <input
+                            type="text"
+                            name="contributorName"
+                            value={editForm.contributorName}
+                            onChange={handleEditChange}
+                            className="w-full px-3 py-1.5 border rounded-lg text-body-sm text-on-surface outline-none border-outline-variant focus:border-secondary"
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          {editForm.paymentMethod === 'mpesa' && (
+                            <input
+                              type="text"
+                              name="mpesaReceiptNo"
+                              value={editForm.mpesaReceiptNo}
+                              onChange={handleEditChange}
+                              placeholder="Receipt #"
+                              className="w-full px-3 py-1.5 border rounded-lg text-body-sm text-on-surface outline-none border-outline-variant focus:border-secondary"
+                            />
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleEditSave(t.id)}
+                              className="p-2 hover:bg-surface-container-high rounded-lg text-secondary"
+                              title="Save"
+                            >
+                              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>check</span>
+                            </button>
+                            <button
+                              onClick={handleEditCancel}
+                              className="p-2 hover:bg-error-container/20 rounded-lg text-error"
+                              title="Cancel"
+                            >
+                              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>close</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  // ─── DISPLAY ROW ───
+                  return (
+                    <tr
+                      key={t.id}
+                      className={`hover:bg-surface-container transition-colors ${
+                        idx % 2 === 1 ? 'bg-surface-container-low/30' : ''
+                      }`}
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap text-body-md text-on-surface">
+                        {formatDate(t.date)}
+                      </td>
+                      <td className="px-6 py-4">
+                        {categoryBadge(t.notes)}
+                      </td>
+                      <td className="px-6 py-4 text-right font-bold text-primary text-body-md whitespace-nowrap">
+                        {formatNumberTwoDecimals(t.amount)}
+                      </td>
+                      <td className="px-6 py-4 text-body-md text-on-surface">
+                        {sourceLabel(t.paymentMethod)}
+                      </td>
+                      <td className="px-6 py-4 font-medium text-body-md text-on-surface">
+                        {t.contributorName}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-body-sm text-on-surface-variant truncate block max-w-[200px]">
+                          {t.notes || '—'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleEditClick(t)}
+                            className="p-2 hover:bg-surface-container-high rounded-lg text-primary"
+                            title="Edit"
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>edit</span>
+                          </button>
+                          <button
+                            onClick={() => handleDelete(t.id)}
+                            className="p-2 hover:bg-error-container/20 rounded-lg text-error"
+                            title="Delete"
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>delete</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }}
               />
             </>
           )}
         </div>
       )}
-
-      {/* ─── Edit overlay ─── */}
-      <TitheEditOverlay
-        isOpen={!!editingTithe}
-        tithe={editingTithe}
-        onClose={() => setEditingTithe(null)}
-        onSave={handleEditSave}
-      />
 
       {/* Delete confirmation dialog */}
       <ConfirmDialog

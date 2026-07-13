@@ -10,7 +10,6 @@ import KpiCard from '../../components/ui/KpiCard';
 import UniversalTable from '../../components/ui/UniversalTable';
 import ReactECharts from 'echarts-for-react';
 import { useFormValidation } from '../../hooks/useFormValidation';
-import OfferingEditOverlay from '../../components/ui/OfferingEditOverlay';
 
 const SERVICE_TYPES = ['Sunday Main', 'Sunday School'];
 
@@ -72,7 +71,9 @@ export default function Offerings() {
   const [filterYear,        setFilterYear]        = useState(currentYear);
   const [filterMonth,       setFilterMonth]       = useState('');
   const [filterServiceType, setFilterServiceType] = useState('');
-  const [filterSearch,      setFilterSearch]      = useState('');
+  const [filterSearch,      setFilterSearch]      = useState('');  // raw input — not sent to API
+  const [debouncedSearch,   setDebouncedSearch]   = useState('');  // debounced — sent to API
+  const searchDebounceRef = useRef(null);
 
   const tableHasActiveFilters =
     filterYear  !== currentYear ||
@@ -82,22 +83,19 @@ export default function Offerings() {
 
   const { fieldErrors, validate, clearFieldError, clearAllErrors } = useFormValidation();
 
-  // ─── Scroll preservation (ref-based — no scroll-to-top on filter change) ───
-  const scrollRef = useRef(null);
-  const saveScroll = () => {
+  // ─── Scroll preservation ───
+  const saveScroll    = () => document.getElementById('main-scroll')?.scrollTop ?? 0;
+  const restoreScroll = (pos) => {
     const el = document.getElementById('main-scroll');
-    scrollRef.current = el ? el.scrollTop : 0;
-  };
-  const restoreScroll = () => {
-    const el = document.getElementById('main-scroll');
-    if (el && scrollRef.current != null) el.scrollTop = scrollRef.current;
+    if (el) el.scrollTop = pos;
   };
 
   // ─── Summary (KPI + chart data) ───
   const [summary, setSummary] = useState(null);
 
-  // ─── Edit overlay ───
-  const [editingOffering, setEditingOffering] = useState(null);
+  // ─── Edit ───
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
 
   // ─── Delete ───
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -118,7 +116,7 @@ export default function Offerings() {
 
   // ─── Fetch offerings list (table) ───
   const fetchOfferingsList = useCallback(async (usePage) => {
-    saveScroll();
+    const pos = saveScroll();
     setLoading(true);
     try {
       const params = {
@@ -128,7 +126,7 @@ export default function Offerings() {
       };
       if (filterMonth)       params.month       = filterMonth;
       if (filterServiceType) params.serviceType = filterServiceType;
-      if (filterSearch)      params.search      = filterSearch;
+      if (debouncedSearch)   params.search      = debouncedSearch;
 
       const res = await api.get('/offerings', { params });
       const data = res.data;
@@ -138,12 +136,13 @@ export default function Offerings() {
       showError(err?.response?.data?.message || 'Failed to fetch offerings');
     } finally {
       setLoading(false);
-      requestAnimationFrame(restoreScroll);
+      restoreScroll(pos);
     }
-  }, [tableLimit, filterYear, filterMonth, filterServiceType, filterSearch]);
+  }, [tableLimit, filterYear, filterMonth, filterServiceType, debouncedSearch]);
 
   // ─── Fetch summary (KPI cards + chart) ───
   const fetchSummaryData = useCallback(async () => {
+    const pos = saveScroll();
     try {
       if (chartMode === 'yearly') {
         const res = await api.get('/offerings/summary/yearly', { params: { year: chartYear } });
@@ -154,6 +153,8 @@ export default function Offerings() {
       }
     } catch {
       setSummary(null);
+    } finally {
+      restoreScroll(pos);
     }
   }, [chartMode, chartYear, chartMonth]);
 
@@ -176,7 +177,16 @@ export default function Offerings() {
     if (activeTab !== 'records') return;
     setPage(1);
     fetchOfferingsList(1);
-  }, [filterYear, filterMonth, filterServiceType, filterSearch, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterYear, filterMonth, filterServiceType, debouncedSearch, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Debounce search — only fire API call 400ms after user stops typing ───
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setDebouncedSearch(filterSearch);
+    }, 400);
+    return () => clearTimeout(searchDebounceRef.current);
+  }, [filterSearch]);
 
   // ─── Pagination ───
   useEffect(() => {
@@ -214,7 +224,7 @@ export default function Offerings() {
         amount: parseFloat(form.amount),
         date: form.date,
         serviceType: form.serviceType,
-        paymentMethod: form.paymentMethod === 'bank' ? 'BANK_TRANSFER' : paymentMethod.toUpperCase(),
+        paymentMethod: form.paymentMethod === 'bank' ? 'BANK_TRANSFER' : form.paymentMethod.toUpperCase(),
         mpesaReceiptNo: form.mpesaReceiptNo || null,
         bankName: form.bankName || null,
         chequeNumber: form.chequeNumber || null,
@@ -258,11 +268,46 @@ export default function Offerings() {
     }
   };
 
-  // ─── Overlay edit save handler ───
-  const handleEditSave = async (id, payload) => {
-    await api.put(`/offerings/${id}`, payload);
-    fetchOfferingsList(page);
-    fetchSummaryData();
+  // ─── Edit handlers ───
+  const handleEditClick = (o) => {
+    setEditingId(o.id);
+    setEditForm({
+      contributorName: o.contributorName || '',
+      amount: o.amount != null ? String(o.amount) : '',
+      date: o.date ? o.date.split('T')[0] : '',
+      serviceType: o.serviceType || 'Sunday Main',
+      paymentMethod: (o.paymentMethod || 'CASH').toLowerCase(),
+      mpesaReceiptNo: o.mpesaReceiptNo || '',
+      bankName: o.bankName || '',
+      chequeNumber: o.chequeNumber || '',
+      idNumber: o.idNumber || '',
+      notes: o.notes || '',
+    });
+  };
+
+  const handleEditChange = (e) => {
+    setEditForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  };
+
+  const handleEditSave = async (id) => {
+    try {
+      await api.put(`/offerings/${id}`, {
+        ...editForm,
+        paymentMethod: editForm.paymentMethod === 'bank' ? 'BANK_TRANSFER' : editForm.paymentMethod.toUpperCase(),
+        amount: parseFloat(editForm.amount),
+      });
+      setEditingId(null);
+      setEditForm({});
+      fetchOfferingsList(page);
+      fetchSummaryData();
+    } catch (err) {
+      showError(err?.response?.data?.message || 'Failed to update offering');
+    }
+  };
+
+  const handleEditCancel = () => {
+    setEditingId(null);
+    setEditForm({});
   };
 
   // ─── CSV Export ───
@@ -281,7 +326,7 @@ export default function Offerings() {
         const params = { year: filterYear, limit: PAGE_SIZE, page: currentPage };
         if (filterMonth)       params.month       = filterMonth;
         if (filterServiceType) params.serviceType = filterServiceType;
-        if (filterSearch)      params.search      = filterSearch;
+        if (debouncedSearch)   params.search      = debouncedSearch;
 
         const res = await api.get('/offerings', { params });
         const data = res.data;
@@ -1080,51 +1125,117 @@ export default function Offerings() {
                     </span>
                   </div>
                 }
-                renderRow={(o, idx) => (
-                  <tr key={o.id} className={`hover:bg-surface-container transition-colors ${idx % 2 === 1 ? 'bg-surface-container-low/30' : ''}`}>
-                    <td className="px-6 py-4 text-body-sm">{formatDate(o.date)}</td>
-                    <td className="px-6 py-4">{serviceTypeBadge(o.serviceType)}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-surface-container-highest flex items-center justify-center text-[10px] font-bold">
-                          {o.recordedByUser
-                            ? `${(o.recordedByUser.firstName || '')[0] || '?'}${(o.recordedByUser.lastName || '')[0] || '?'}`
-                            : '??'}
+                renderRow={(o, idx) => {
+                  if (editingId === o.id) {
+                    return (
+                      <tr key={o.id} className="border-b border-outline-variant/30">
+                        <td className="px-6 py-4">
+                          <input
+                            type="date"
+                            name="date"
+                            value={editForm.date}
+                            onChange={handleEditChange}
+                            className="w-full px-2 py-1 border border-outline-variant rounded text-sm outline-none focus:border-primary"
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          <select
+                            name="serviceType"
+                            value={editForm.serviceType}
+                            onChange={handleEditChange}
+                            className="w-full px-2 py-1 border border-outline-variant rounded text-sm outline-none focus:border-primary"
+                          >
+                            {SERVICE_TYPES.map((st) => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-surface-container-highest flex items-center justify-center text-[10px] font-bold">
+                              {o.recordedByUser
+                                ? `${(o.recordedByUser.firstName || '')[0] || '?'}${(o.recordedByUser.lastName || '')[0] || '?'}`
+                                : '??'}
+                            </div>
+                            <span className="text-body-sm">
+                              {o.recordedByUser
+                                ? `${o.recordedByUser.firstName || ''} ${o.recordedByUser.lastName || ''}`.trim()
+                                : 'Unknown'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <select
+                            name="paymentMethod"
+                            value={editForm.paymentMethod}
+                            onChange={handleEditChange}
+                            className="w-full px-2 py-1 border border-outline-variant rounded text-sm outline-none focus:border-primary"
+                          >
+                            <option value="cash">Cash</option>
+                            <option value="mpesa">M-Pesa</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                          </select>
+                        </td>
+                        <td className="px-6 py-4">
+                          <input
+                            type="number"
+                            name="amount"
+                            value={editForm.amount}
+                            onChange={handleEditChange}
+                            className="w-full px-2 py-1 border border-outline-variant rounded text-sm text-right outline-none focus:border-primary"
+                          />
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex justify-center gap-3">
+                            <button onClick={() => handleEditSave(o.id)} className="text-secondary hover:text-primary cursor-pointer" title="Save">
+                              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>check</span>
+                            </button>
+                            <button onClick={handleEditCancel} className="text-error cursor-pointer" title="Cancel">
+                              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>close</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return (
+                    <tr key={o.id} className={`hover:bg-surface-container transition-colors ${idx % 2 === 1 ? 'bg-surface-container-low/30' : ''}`}>
+                      <td className="px-6 py-4 text-body-sm">{formatDate(o.date)}</td>
+                      <td className="px-6 py-4">{serviceTypeBadge(o.serviceType)}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-surface-container-highest flex items-center justify-center text-[10px] font-bold">
+                            {o.recordedByUser
+                              ? `${(o.recordedByUser.firstName || '')[0] || '?'}${(o.recordedByUser.lastName || '')[0] || '?'}`
+                              : '??'}
+                          </div>
+                          <span className="text-body-sm">
+                            {o.recordedByUser
+                              ? `${o.recordedByUser.firstName || ''} ${o.recordedByUser.lastName || ''}`.trim()
+                              : 'Unknown'}
+                          </span>
                         </div>
-                        <span className="text-body-sm">
-                          {o.recordedByUser
-                            ? `${o.recordedByUser.firstName || ''} ${o.recordedByUser.lastName || ''}`.trim()
-                            : 'Unknown'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-body-sm">{paymentMethodLabel(o.paymentMethod)}</td>
-                    <td className="px-6 py-4 text-right font-bold text-primary">{formatKESFull(o.amount)}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex justify-center gap-3">
-                        <button onClick={() => setEditingOffering(o)} className="p-2 hover:bg-surface-container-high rounded-lg text-primary" title="Edit">
-                          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>edit</span>
-                        </button>
-                        <button onClick={() => setConfirmDeleteId(o.id)} className="p-2 hover:bg-error-container/20 rounded-lg text-error" title="Delete">
-                          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>delete</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
+                      </td>
+                      <td className="px-6 py-4 text-body-sm">{paymentMethodLabel(o.paymentMethod)}</td>
+                      <td className="px-6 py-4 text-right font-bold text-primary">{formatKESFull(o.amount)}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex justify-center gap-3">
+                          <button onClick={() => handleEditClick(o)} className="text-on-surface-variant hover:text-primary cursor-pointer" title="Edit">
+                            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>edit</span>
+                          </button>
+                          <button onClick={() => setConfirmDeleteId(o.id)} className="text-on-surface-variant hover:text-error cursor-pointer" title="Delete">
+                            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>delete</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }}
               />
             </>
           )}
         </div>
       )}
-
-      {/* ─── Edit overlay ─── */}
-      <OfferingEditOverlay
-        isOpen={!!editingOffering}
-        offering={editingOffering}
-        onClose={() => setEditingOffering(null)}
-        onSave={handleEditSave}
-      />
 
       <ConfirmDialog
         isOpen={!!confirmDeleteId}
