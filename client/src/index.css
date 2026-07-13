@@ -57,6 +57,41 @@
 
   --color-outline: #717a6d;
   --color-outline-variant: #c0c9bb;
+  /* ── RGB channels for Tailwind opacity modifier support (bg-primary/10 etc) ── */
+  --color-primary-rgb: 0 69 13;
+  --color-on-primary-rgb: 255 255 255;
+  --color-primary-container-rgb: 27 94 32;
+  --color-on-primary-container-rgb: 144 214 137;
+  --color-secondary-rgb: 27 109 36;
+  --color-on-secondary-rgb: 255 255 255;
+  --color-secondary-container-rgb: 160 243 153;
+  --color-on-secondary-container-rgb: 33 113 40;
+  --color-tertiary-rgb: 83 52 0;
+  --color-on-tertiary-rgb: 255 255 255;
+  --color-tertiary-container-rgb: 114 73 0;
+  --color-on-tertiary-container-rgb: 255 183 81;
+  --color-error-rgb: 186 26 26;
+  --color-on-error-rgb: 255 255 255;
+  --color-error-container-rgb: 255 218 214;
+  --color-on-error-container-rgb: 147 0 10;
+  --color-background-rgb: 252 249 248;
+  --color-on-background-rgb: 28 27 27;
+  --color-surface-rgb: 252 249 248;
+  --color-surface-dim-rgb: 220 217 217;
+  --color-surface-bright-rgb: 252 249 248;
+  --color-surface-container-lowest-rgb: 255 255 255;
+  --color-surface-container-low-rgb: 246 243 242;
+  --color-surface-container-rgb: 240 237 237;
+  --color-surface-container-high-rgb: 234 231 231;
+  --color-surface-container-highest-rgb: 229 226 225;
+  --color-on-surface-rgb: 28 27 27;
+  --color-on-surface-variant-rgb: 65 73 62;
+  --color-inverse-surface-rgb: 49 48 48;
+  --color-inverse-on-surface-rgb: 243 240 239;
+  --color-surface-variant-rgb: 229 226 225;
+  --color-surface-tint-rgb: 42 107 44;
+  --color-outline-rgb: 113 122 109;
+  --color-outline-variant-rgb: 192 201 187;
 }
 
 /* ── Dark mode tokens (SacredSteward theme) — commented out until new theme is ready ──
