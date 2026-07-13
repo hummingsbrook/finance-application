@@ -204,7 +204,7 @@ export default function Expenses() {
         amount:        parseFloat(form.amount),
         date:          form.date,
         category:      form.category,
-        paymentMethod: form.paymentMethod.toUpperCase(),
+        paymentMethod: form.paymentMethod === 'bank' ? 'BANK_TRANSFER' : paymentMethod.toUpperCase(),
         recipientName: form.recipientName  || null,
         mpesaReceiptNo:form.mpesaReceiptNo || null,
         bankName:      form.bankName       || null,

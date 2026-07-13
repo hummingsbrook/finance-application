@@ -218,7 +218,7 @@ export default function Tithes() {
         contributorName: form.contributorName,
         amount: parseFloat(form.amount),
         date: form.date,
-        paymentMethod: form.paymentMethod.toUpperCase(),
+        paymentMethod: form.paymentMethod === 'bank' ? 'BANK_TRANSFER' : paymentMethod.toUpperCase(),
         mpesaReceiptNo: form.mpesaReceiptNo || null,
         bankName: form.bankName || null,
         chequeNumber: form.chequeNumber || null,

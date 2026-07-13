@@ -136,7 +136,7 @@ export default function Harambees() {
         contributorName: contribForm.contributorName,
         amount: parsed,
         date: contribForm.date,
-        paymentMethod: contribForm.paymentMethod === 'bank' ? 'BANK_TRANSFER' : contribForm.paymentMethod.toUpperCase(),
+        paymentMethod: contribForm.paymentMethod === 'bank' ? 'BANK_TRANSFER' : contribForm.paymentMethod === 'bank' ? 'BANK_TRANSFER' : paymentMethod.toUpperCase(),
         mpesaReceiptNo: contribForm.mpesaReceiptNo || null,
         bankName: contribForm.bankName || null,
         chequeNumber: contribForm.chequeNumber || null,
