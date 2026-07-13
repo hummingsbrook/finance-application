@@ -23,18 +23,25 @@ if (missing.length > 0) {
 }
 
 const app = express();
+app.set('trust proxy', 1);
 app.set('etag', false);
 const PORT = process.env.PORT || 3001;
 
 // ─── Security & Middleware ─────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    const allowed = [
+      process.env.CLIENT_URL,
+      /\.vercel\.app$/,  // allow all vercel preview URLs
+    ];
+    if (!origin) return callback(null, true); // allow curl/mobile
+    const isAllowed = allowed.some(a =>
+      typeof a === 'string' ? a === origin : a.test(origin)
+    );
+    callback(isAllowed ? null : new Error('CORS blocked'), isAllowed);
+  },
   credentials: true,
-  // FIXED: expose x-csrf-token so the browser can read it from response headers.
-  // Without this the browser silently drops all custom response headers and the
-  // client falls back to reading the raw csrf-token cookie (token|hash), which
-  // is NOT the value the server expects in X-CSRF-Token (just the token part).
   exposedHeaders: ['x-csrf-token'],
 }));
 app.use(cookieParser());
@@ -60,9 +67,9 @@ if (!isTestEnv) {
     getSecret: () => csrfSecret,
     cookieName: 'csrf-token',
     cookieOptions: {
-      httpOnly: false,   // must be readable by JS
-      sameSite: 'None', // required for cross-origin (Vercel → Railway)
-      secure:   true,
+      httpOnly: false,                              // must be readable by JS
+      sameSite: isProduction ? 'Strict' : 'Lax',
+      secure:   isProduction,
       path:     '/',
     },
     size: 64,
