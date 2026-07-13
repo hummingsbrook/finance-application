@@ -23,6 +23,7 @@ if (missing.length > 0) {
 }
 
 const app = express();
+app.set('trust proxy', 1);
 app.set('etag', false);
 const PORT = process.env.PORT || 3001;
 
