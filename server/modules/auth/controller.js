@@ -59,8 +59,8 @@ function setTokenCookie(res, req, token, expiresInStr) {
   }
   res.cookie('token', token, {
     httpOnly: true,
-    secure: isProduction || req.headers['x-forwarded-proto'] === 'https',
-    sameSite: isProduction ? 'Strict' : 'Lax',
+    secure: true,
+    sameSite: 'None',  // required for cross-origin (Vercel → Railway)
     maxAge,
   });
 }
@@ -71,8 +71,8 @@ function clearTokenCookie(res, req) {
   const isProduction = process.env.NODE_ENV === 'production';
   res.clearCookie('token', {
     httpOnly: true,
-    secure: isProduction || req.headers['x-forwarded-proto'] === 'https',
-    sameSite: isProduction ? 'Strict' : 'Lax',
+    secure: true,
+    sameSite: 'None',  // must match how the cookie was set
   });
 }
 
