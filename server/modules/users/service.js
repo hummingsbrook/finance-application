@@ -54,7 +54,7 @@ async function createUser(data) {
       passwordHash: data.passwordHash,
       firstName: data.firstName,
       lastName: data.lastName,
-      role: data.role || 'PARTNER',
+      role: data.role || 'MANAGER',
       phone: data.phone || null,
       isActive: data.isActive !== undefined ? data.isActive : true,
     },
