@@ -52,18 +52,6 @@ export function AuthProvider({ children }) {
     []
   );
 
-  const signUp = useCallback(
-    async (data) => {
-      const res = await api.post('/auth/signup', data);
-      const userData = res.data.user || res.data;
-      const dashboardPath = ROLE_DASHBOARD_MAP[userData.role] || '/signin';
-      // Server already set a valid auth cookie; redirect straight to the dashboard
-      window.location.href = dashboardPath;
-      return userData;
-    },
-    []
-  );
-
   const signOut = useCallback(async () => {
     try {
       await api.post('/auth/logout');
@@ -83,7 +71,6 @@ export function AuthProvider({ children }) {
     loading,
     signIn,
     signOut,
-    signUp,
     updateUser,
   };
 

@@ -2,6 +2,9 @@ const prisma = require('../../lib/prisma');
 const { roundMoney } = require('../../lib/money');
 const { parsePagination } = require('../../lib/pagination');
 
+// Only these two offering service types are allowed app-wide.
+const VALID_SERVICE_TYPES = ['Sunday Main', 'Sunday School'];
+
 async function listOfferings(filters = {}) {
   const { page, limit, skip } = parsePagination(filters);
   const { startDate, endDate, serviceType, status, paymentMethod, year, month, sortBy } = filters;
@@ -272,6 +275,10 @@ async function getOfferingYearlySummary({ year }) {
 async function createOffering(data) {
   const amount = roundMoney(data.amount);
 
+  if (!VALID_SERVICE_TYPES.includes(data.serviceType)) {
+    throw Object.assign(new Error('Invalid service type. Must be Sunday Main or Sunday School.'), { status: 400 });
+  }
+
   return prisma.offering.create({
     data: {
       contributorName: data.contributorName,
@@ -292,6 +299,10 @@ async function createOffering(data) {
 }
 
 async function updateOffering(id, data) {
+  if (data.serviceType !== undefined && !VALID_SERVICE_TYPES.includes(data.serviceType)) {
+    throw Object.assign(new Error('Invalid service type. Must be Sunday Main or Sunday School.'), { status: 400 });
+  }
+
   const updateData = {};
   if (data.contributorName !== undefined) updateData.contributorName = data.contributorName;
   if (data.amount !== undefined) updateData.amount = roundMoney(data.amount);

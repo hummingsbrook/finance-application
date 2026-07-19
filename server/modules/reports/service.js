@@ -1,4 +1,5 @@
 const prisma = require('../../lib/prisma');
+const eventService = require('../events/service');
 
 function roundAmount(amount) {
   return Math.round(Number(amount) * 100) / 100;
@@ -22,7 +23,7 @@ async function getFinancialSummary() {
     status: 'CONFIRMED',
   };
 
-  const [monthTithes, monthOfferings, monthExpenses, totalTithes, totalOfferings, totalExpenses] =
+  const [monthTithes, monthOfferings, monthExpenses, totalTithes, totalOfferings, totalExpenses, monthEventsAgg, totalEventsAgg] =
     await Promise.all([
       prisma.tithe.aggregate({
         where: monthWhere,
@@ -54,13 +55,17 @@ async function getFinancialSummary() {
         _sum: { amount: true },
         _count: { id: true },
       }),
+      // Event money contributions for the current month
+      eventService.getEventsTotalForPeriod({ start: startOfMonth, end: endOfMonth }),
+      // Event money contributions all-time
+      eventService.getEventsTotalForPeriod({ start: new Date(0), end: new Date(8640000000000000) }),
     ]);
 
   const monthIncome =
-    roundAmount(Number(monthTithes._sum.amount || 0) + Number(monthOfferings._sum.amount || 0));
+    roundAmount(Number(monthTithes._sum.amount || 0) + Number(monthOfferings._sum.amount || 0) + Number(monthEventsAgg.total || 0));
   const monthExpenditure = roundAmount(Number(monthExpenses._sum.amount || 0));
   const totalIncome =
-    roundAmount(Number(totalTithes._sum.amount || 0) + Number(totalOfferings._sum.amount || 0));
+    roundAmount(Number(totalTithes._sum.amount || 0) + Number(totalOfferings._sum.amount || 0) + Number(totalEventsAgg.total || 0));
   const totalExpenditure = roundAmount(Number(totalExpenses._sum.amount || 0));
 
   return {
@@ -71,6 +76,7 @@ async function getFinancialSummary() {
       titheCount: monthTithes._count.id,
       offerings: roundAmount(monthOfferings._sum.amount || 0),
       offeringCount: monthOfferings._count.id,
+      events: roundAmount(monthEventsAgg.total || 0),
       expenses: monthExpenditure,
       expenseCount: monthExpenses._count.id,
       totalIncome: monthIncome,
@@ -81,6 +87,7 @@ async function getFinancialSummary() {
       titheCount: totalTithes._count.id,
       offerings: roundAmount(totalOfferings._sum.amount || 0),
       offeringCount: totalOfferings._count.id,
+      events: roundAmount(totalEventsAgg.total || 0),
       expenses: totalExpenditure,
       expenseCount: totalExpenses._count.id,
       totalIncome,
@@ -218,6 +225,7 @@ async function getDashboardData({ year, month } = {}) {
       prisma.tithe.aggregate({ where, _sum: { amount: true } }),
       prisma.offering.aggregate({ where, _sum: { amount: true } }),
       prisma.expense.aggregate({ where, _sum: { amount: true } }),
+      eventService.getEventsTotalForPeriod({ start: m.start, end: m.end }),
     ];
   });
 
@@ -253,6 +261,15 @@ async function getDashboardData({ year, month } = {}) {
         recordedByUser: { select: { firstName: true, lastName: true } },
       },
     }),
+    // Event money contributions — only money type appears in the activity feed
+    prisma.eventContribution.findMany({
+      take: 10,
+      orderBy: { eventDate: 'desc' },
+      where: { contributionType: 'MONEY' },
+      include: {
+        recordedByUser: { select: { firstName: true, lastName: true } },
+      },
+    }),
   ]);
 
   const summary = results[0];
@@ -268,22 +285,25 @@ async function getDashboardData({ year, month } = {}) {
     status: 'CONFIRMED' 
   };
 
-  const [scopedTithes, scopedOfferings, scopedExpenses] = await Promise.all([
+  const [scopedTithes, scopedOfferings, scopedExpenses, scopedEvents] = await Promise.all([
     prisma.tithe.aggregate({ where: scopedWhere, _sum: { amount: true }, _count: { id: true } }),
     prisma.offering.aggregate({ where: scopedWhere, _sum: { amount: true }, _count: { id: true } }),
     prisma.expense.aggregate({ where: scopedWhere, _sum: { amount: true }, _count: { id: true } }),
+    eventService.getEventsTotalForPeriod({ start: scopedStart, end: scopedEnd }),
   ]);
 
-  const scopedTithesAmt = roundAmount(Number(scopedTithes._sum.amount || 0));
+  const scopedTithesAmt    = roundAmount(Number(scopedTithes._sum.amount || 0));
   const scopedOfferingsAmt = roundAmount(Number(scopedOfferings._sum.amount || 0));
-  const scopedExpensesAmt = roundAmount(Number(scopedExpenses._sum.amount || 0));
-  const scopedIncome = roundAmount(scopedTithesAmt + scopedOfferingsAmt);
+  const scopedExpensesAmt  = roundAmount(Number(scopedExpenses._sum.amount || 0));
+  const scopedEventsAmt    = roundAmount(Number(scopedEvents.total || 0));
+  const scopedIncome       = roundAmount(scopedTithesAmt + scopedOfferingsAmt + scopedEventsAmt);
 
   // Override the currentMonth on the summary with the scoped values
   summary.currentMonth = {
     ...summary.currentMonth,       // keeps pendingCount fields added later
     tithes: scopedTithesAmt,
     offerings: scopedOfferingsAmt,
+    events: scopedEventsAmt,
     expenses: scopedExpensesAmt,
     totalIncome: scopedIncome,
     netBalance: roundAmount(scopedIncome - scopedExpensesAmt),
@@ -304,12 +324,13 @@ async function getDashboardData({ year, month } = {}) {
   // ── trend key ─────────────────────────────────────────────────
   const trendStart = 4;
   const trend = months.map((m, idx) => {
-    const base = trendStart + idx * 3;
-    const titheSum = Number(results[base]?._sum.amount || 0);
+    const base        = trendStart + idx * 4;   // stride 4 now (tithe/offering/expense/event)
+    const titheSum    = Number(results[base]?._sum.amount || 0);
     const offeringSum = Number(results[base + 1]?._sum.amount || 0);
-    const expenseSum = Number(results[base + 2]?._sum.amount || 0);
-    const income = roundAmount(titheSum + offeringSum);
-    const expenses = roundAmount(expenseSum);
+    const expenseSum  = Number(results[base + 2]?._sum.amount || 0);
+    const eventSum    = Number(results[base + 3]?.total || 0);
+    const income      = roundAmount(titheSum + offeringSum + eventSum);
+    const expenses    = roundAmount(expenseSum);
     return {
       month: m.month,
       year: m.year,
@@ -321,11 +342,12 @@ async function getDashboardData({ year, month } = {}) {
   });
 
   // ── recentActivity key ────────────────────────────────────────
-  // After adding the harambee query, the last four slots hold the recent rows.
-  const recentTitheRows = results[results.length - 4];
-  const recentOfferingRows = results[results.length - 3];
-  const recentExpenseRows = results[results.length - 2];
-  const recentHarambeeRows = results[results.length - 1];
+  // After adding the event query, the last FIVE slots hold the recent rows.
+  const recentTitheRows     = results[results.length - 5];
+  const recentOfferingRows  = results[results.length - 4];
+  const recentExpenseRows   = results[results.length - 3];
+  const recentHarambeeRows  = results[results.length - 2];
+  const recentEventRows     = results[results.length - 1];
 
   const mapActivity = (row, type) => {
     let description = '';
@@ -333,16 +355,20 @@ async function getDashboardData({ year, month } = {}) {
     else if (type === 'offering') description = row.serviceType || '';
     else if (type === 'expense') description = row.description || '';
     else if (type === 'harambee') description = row.harambee?.title || row.contributorName || '';
+    else if (type === 'event') description = row.eventName || '';
 
     const recorder = row.recordedByUser;
     const recordedBy = recorder
       ? `${recorder.firstName || ''} ${recorder.lastName || ''}`.trim()
       : '';
 
+    // For events, the date column is `eventDate` not `date`
+    const activityDate = type === 'event' ? row.eventDate : row.date;
+
     return {
       id: row.id,
       type,
-      date: row.date,
+      date: activityDate,
       amount: roundAmount(Number(row.amount || 0)),
       paymentMethod: row.paymentMethod,
       description,
@@ -356,6 +382,9 @@ async function getDashboardData({ year, month } = {}) {
     ...(Array.isArray(recentExpenseRows) ? recentExpenseRows.map((r) => mapActivity(r, 'expense')) : []),
     ...(Array.isArray(recentHarambeeRows)
       ? recentHarambeeRows.map((r) => mapActivity(r, 'harambee'))
+      : []),
+    ...(Array.isArray(recentEventRows)
+      ? recentEventRows.map((r) => mapActivity(r, 'event'))
       : []),
   ];
 
@@ -437,49 +466,52 @@ async function getSummary(year, month) {
 /**
  * getBreakdown(year, month)
  * Returns:
- *   aggregated — Income Statement rows (Tithes, Offerings total, each offering serviceType,
- *                Harambees, and one row per expense category).
+ *   aggregated — Income Statement rows (Tithes, Offerings total, Harambees, and one row per expense category).
  *   activities — Statement of Activities rows (individual contributions / expenses).
+ *                Note: the Statement of Activities tab was removed from the UI; this array is kept for backward compatibility.
  */
-async function getBreakdown(year, month) {
+async function getBreakdown(year, month, includeActivities = false) {
   const { start, end } = monthRange(year, month);
 
   const where = { date: { gte: start, lte: end }, status: 'CONFIRMED' };
   const harambeeWhere = { date: { gte: start, lte: end } };
 
-  const [
-    titheAgg,
-    offeringAgg,
-    offeringByService,
-    harambeeAgg,
-    expenseAgg,
-    expenseByCategory,
-    titheRows,
-    harambeeRows,
-    expenseRows,
-  ] = await Promise.all([
+  // Always run the 5 aggregate/groupBy queries needed for the Income Statement.
+  // Only run the 3 findMany queries when includeActivities is explicitly requested.
+  const baseQueries = [
     prisma.tithe.aggregate({ where, _sum: { amount: true }, _count: { id: true } }),
     prisma.offering.aggregate({ where, _sum: { amount: true }, _count: { id: true } }),
-    prisma.offering.groupBy({ by: ['serviceType'], where, _sum: { amount: true }, _count: { id: true } }),
     prisma.harambeeContribution.aggregate({ where: harambeeWhere, _sum: { amount: true }, _count: { id: true } }),
     prisma.expense.aggregate({ where, _sum: { amount: true }, _count: { id: true } }),
     prisma.expense.groupBy({ by: ['category'], where, _sum: { amount: true }, _count: { id: true } }),
-    prisma.tithe.findMany({
-      where,
-      select: { contributorName: true, amount: true },
-      orderBy: { date: 'desc' },
-    }),
-    prisma.harambeeContribution.findMany({
-      where: harambeeWhere,
-      include: { harambee: { select: { title: true } } },
-      orderBy: { date: 'desc' },
-    }),
-    prisma.expense.findMany({
-      where,
-      select: { description: true, category: true, amount: true },
-      orderBy: { date: 'desc' },
-    }),
-  ]);
+  ];
+
+  const activityQueries = includeActivities
+    ? [
+        prisma.tithe.findMany({
+          where,
+          select: { contributorName: true, amount: true },
+          orderBy: { date: 'desc' },
+        }),
+        prisma.harambeeContribution.findMany({
+          where: harambeeWhere,
+          include: { harambee: { select: { title: true } } },
+          orderBy: { date: 'desc' },
+        }),
+        prisma.expense.findMany({
+          where,
+          select: { description: true, category: true, amount: true },
+          orderBy: { date: 'desc' },
+        }),
+      ]
+    : [];
+
+  const results = await Promise.all([...baseQueries, ...activityQueries]);
+
+  const [titheAgg, offeringAgg, harambeeAgg, expenseAgg, expenseByCategory] = results;
+  const titheRows    = includeActivities ? results[5] : [];
+  const harambeeRows = includeActivities ? results[6] : [];
+  const expenseRows  = includeActivities ? results[7] : [];
 
   const tithesSum = roundAmount(Number(titheAgg._sum.amount || 0));
   const offeringsSum = roundAmount(Number(offeringAgg._sum.amount || 0));
@@ -494,13 +526,6 @@ async function getBreakdown(year, month) {
 
   aggregated.push({ category: 'Tithes', actual: tithesSum, count: titheAgg._count.id });
   aggregated.push({ category: 'Offerings', actual: offeringsSum, count: offeringAgg._count.id });
-  for (const item of offeringByService) {
-    aggregated.push({
-      category: `Offering — ${item.serviceType}`,
-      actual: roundAmount(Number(item._sum.amount || 0)),
-      count: item._count.id,
-    });
-  }
   aggregated.push({ category: 'Harambees', actual: harambeesSum, count: harambeeAgg._count.id });
   for (const item of expenseByCategory) {
     aggregated.push({
@@ -519,17 +544,6 @@ async function getBreakdown(year, month) {
     activities.push({
       description: row.contributorName || 'Anonymous',
       category: 'Tithe',
-      amount,
-      type: 'income',
-      pct: totalIncome > 0 ? roundAmount((amount / totalIncome) * 100) : 0,
-    });
-  }
-  // Offering totals grouped by serviceType
-  for (const item of offeringByService) {
-    const amount = roundAmount(Number(item._sum.amount || 0));
-    activities.push({
-      description: `Offering — ${item.serviceType}`,
-      category: 'Offering',
       amount,
       type: 'income',
       pct: totalIncome > 0 ? roundAmount((amount / totalIncome) * 100) : 0,
@@ -603,46 +617,49 @@ async function getSummaryYearly(year) {
  * getBreakdownYearly(year)
  * Same shape as getBreakdown(year, month) but spanning the full calendar year.
  */
-async function getBreakdownYearly(year) {
+async function getBreakdownYearly(year, includeActivities = false) {
   const start = new Date(year, 0, 1);
   const end   = new Date(year, 11, 31, 23, 59, 59);
 
   const where = { date: { gte: start, lte: end }, status: 'CONFIRMED' };
   const harambeeWhere = { date: { gte: start, lte: end } };
 
-  const [
-    titheAgg,
-    offeringAgg,
-    offeringByService,
-    harambeeAgg,
-    expenseAgg,
-    expenseByCategory,
-    titheRows,
-    harambeeRows,
-    expenseRows,
-  ] = await Promise.all([
+  // Always run the 5 aggregate/groupBy queries needed for the Income Statement.
+  // Only run the 3 findMany queries when includeActivities is explicitly requested.
+  const baseQueries = [
     prisma.tithe.aggregate({ where, _sum: { amount: true }, _count: { id: true } }),
     prisma.offering.aggregate({ where, _sum: { amount: true }, _count: { id: true } }),
-    prisma.offering.groupBy({ by: ['serviceType'], where, _sum: { amount: true }, _count: { id: true } }),
     prisma.harambeeContribution.aggregate({ where: harambeeWhere, _sum: { amount: true }, _count: { id: true } }),
     prisma.expense.aggregate({ where, _sum: { amount: true }, _count: { id: true } }),
     prisma.expense.groupBy({ by: ['category'], where, _sum: { amount: true }, _count: { id: true } }),
-    prisma.tithe.findMany({
-      where,
-      select: { contributorName: true, amount: true },
-      orderBy: { date: 'desc' },
-    }),
-    prisma.harambeeContribution.findMany({
-      where: harambeeWhere,
-      include: { harambee: { select: { title: true } } },
-      orderBy: { date: 'desc' },
-    }),
-    prisma.expense.findMany({
-      where,
-      select: { description: true, category: true, amount: true },
-      orderBy: { date: 'desc' },
-    }),
-  ]);
+  ];
+
+  const activityQueries = includeActivities
+    ? [
+        prisma.tithe.findMany({
+          where,
+          select: { contributorName: true, amount: true },
+          orderBy: { date: 'desc' },
+        }),
+        prisma.harambeeContribution.findMany({
+          where: harambeeWhere,
+          include: { harambee: { select: { title: true } } },
+          orderBy: { date: 'desc' },
+        }),
+        prisma.expense.findMany({
+          where,
+          select: { description: true, category: true, amount: true },
+          orderBy: { date: 'desc' },
+        }),
+      ]
+    : [];
+
+  const results = await Promise.all([...baseQueries, ...activityQueries]);
+
+  const [titheAgg, offeringAgg, harambeeAgg, expenseAgg, expenseByCategory] = results;
+  const titheRows    = includeActivities ? results[5] : [];
+  const harambeeRows = includeActivities ? results[6] : [];
+  const expenseRows  = includeActivities ? results[7] : [];
 
   const tithesSum = roundAmount(Number(titheAgg._sum.amount || 0));
   const offeringsSum = roundAmount(Number(offeringAgg._sum.amount || 0));
@@ -657,13 +674,6 @@ async function getBreakdownYearly(year) {
 
   aggregated.push({ category: 'Tithes', actual: tithesSum, count: titheAgg._count.id });
   aggregated.push({ category: 'Offerings', actual: offeringsSum, count: offeringAgg._count.id });
-  for (const item of offeringByService) {
-    aggregated.push({
-      category: `Offering — ${item.serviceType}`,
-      actual: roundAmount(Number(item._sum.amount || 0)),
-      count: item._count.id,
-    });
-  }
   aggregated.push({ category: 'Harambees', actual: harambeesSum, count: harambeeAgg._count.id });
   for (const item of expenseByCategory) {
     aggregated.push({
@@ -682,17 +692,6 @@ async function getBreakdownYearly(year) {
     activities.push({
       description: row.contributorName || 'Anonymous',
       category: 'Tithe',
-      amount,
-      type: 'income',
-      pct: totalIncome > 0 ? roundAmount((amount / totalIncome) * 100) : 0,
-    });
-  }
-  // Offering totals grouped by serviceType
-  for (const item of offeringByService) {
-    const amount = roundAmount(Number(item._sum.amount || 0));
-    activities.push({
-      description: `Offering — ${item.serviceType}`,
-      category: 'Offering',
       amount,
       type: 'income',
       pct: totalIncome > 0 ? roundAmount((amount / totalIncome) * 100) : 0,
@@ -858,18 +857,20 @@ async function getYearlyDashboardData({ year } = {}) {
   const prevHarambeeWhere = { date: { gte: prevStart, lte: prevEnd } };
 
   const [
-    yearTithes, yearOfferings, yearHarambees, yearExpenses,
-    prevTithes, prevOfferings, prevHarambees, prevExpenses,
+    yearTithes, yearOfferings, yearHarambees, yearExpenses, yearEvents,
+    prevTithes, prevOfferings, prevHarambees, prevExpenses, prevEvents,
     pendingTithes, pendingOfferings, pendingExpenses,
   ] = await Promise.all([
     prisma.tithe.aggregate({ where: yearWhere, _sum: { amount: true }, _count: { id: true } }),
     prisma.offering.aggregate({ where: yearWhere, _sum: { amount: true }, _count: { id: true } }),
     prisma.harambeeContribution.aggregate({ where: yearHarambeeWhere, _sum: { amount: true }, _count: { id: true } }),
     prisma.expense.aggregate({ where: yearWhere, _sum: { amount: true }, _count: { id: true } }),
+    eventService.getEventsTotalForPeriod({ start: yearStart, end: yearEnd }),
     prisma.tithe.aggregate({ where: prevWhere, _sum: { amount: true } }),
     prisma.offering.aggregate({ where: prevWhere, _sum: { amount: true } }),
     prisma.harambeeContribution.aggregate({ where: prevHarambeeWhere, _sum: { amount: true } }),
     prisma.expense.aggregate({ where: prevWhere, _sum: { amount: true } }),
+    eventService.getEventsTotalForPeriod({ start: prevStart, end: prevEnd }),
     prisma.tithe.count({ where: { status: 'PENDING' } }),
     prisma.offering.count({ where: { status: 'PENDING' } }),
     prisma.expense.count({ where: { status: 'PENDING' } }),
@@ -878,15 +879,17 @@ async function getYearlyDashboardData({ year } = {}) {
   const tithesAmt    = roundAmount(Number(yearTithes._sum.amount || 0));
   const offeringsAmt = roundAmount(Number(yearOfferings._sum.amount || 0));
   const harambeesAmt = roundAmount(Number(yearHarambees._sum.amount || 0));
+  const eventsAmt    = roundAmount(Number(yearEvents.total || 0));
   const expensesAmt  = roundAmount(Number(yearExpenses._sum.amount || 0));
-  const totalIncome  = roundAmount(tithesAmt + offeringsAmt + harambeesAmt);
+  const totalIncome  = roundAmount(tithesAmt + offeringsAmt + harambeesAmt + eventsAmt);
   const netBalance   = roundAmount(totalIncome - expensesAmt);
 
   const prevTithesAmt    = roundAmount(Number(prevTithes._sum.amount || 0));
   const prevOfferingsAmt = roundAmount(Number(prevOfferings._sum.amount || 0));
   const prevHarambeesAmt = roundAmount(Number(prevHarambees._sum.amount || 0));
+  const prevEventsAmt    = roundAmount(Number(prevEvents.total || 0));
   const prevExpensesAmt  = roundAmount(Number(prevExpenses._sum.amount || 0));
-  const prevIncome       = roundAmount(prevTithesAmt + prevOfferingsAmt + prevHarambeesAmt);
+  const prevIncome       = roundAmount(prevTithesAmt + prevOfferingsAmt + prevHarambeesAmt + prevEventsAmt);
   const prevNet          = roundAmount(prevIncome - prevExpensesAmt);
   const pendingCount     = pendingTithes + pendingOfferings + pendingExpenses;
 
@@ -909,27 +912,30 @@ async function getYearlyDashboardData({ year } = {}) {
       prisma.offering.aggregate({ where: wh, _sum: { amount: true } }),
       prisma.harambeeContribution.aggregate({ where: whH, _sum: { amount: true } }),
       prisma.expense.aggregate({ where: wh, _sum: { amount: true } }),
+      eventService.getEventsTotalForPeriod({ start: w.start, end: w.end }),
     ];
   });
   const trendResults = await Promise.all(trendQueries);
 
   const trend = yearWindows.map((w, idx) => {
-    const base        = idx * 4;
-    const income      = roundAmount(
-      Number(trendResults[base]?._sum.amount || 0) +
-      Number(trendResults[base + 1]?._sum.amount || 0) +
-      Number(trendResults[base + 2]?._sum.amount || 0)
+    const base     = idx * 5;   // stride 5 now (tithe/offering/harambee/expense/event)
+    const income   = roundAmount(
+      Number(trendResults[base]?._sum.amount || 0) +      // tithes
+      Number(trendResults[base + 1]?._sum.amount || 0) +  // offerings
+      Number(trendResults[base + 2]?._sum.amount || 0) +  // harambees
+      Number(trendResults[base + 4]?.total || 0)           // events
     );
-    const expenses    = roundAmount(Number(trendResults[base + 3]?._sum.amount || 0));
+    const expenses = roundAmount(Number(trendResults[base + 3]?._sum.amount || 0));
     return { year: w.year, label: w.label, income, expenses, net: roundAmount(income - expenses) };
   });
 
   // Recent activity scoped to the selected year
-  const [rTithes, rOfferings, rExpenses, rHarambees] = await Promise.all([
+  const [rTithes, rOfferings, rExpenses, rHarambees, rEvents] = await Promise.all([
     prisma.tithe.findMany({ where: { date: { gte: yearStart, lte: yearEnd } }, take: 15, orderBy: { date: 'desc' }, include: { recordedByUser: { select: { firstName: true, lastName: true } } } }),
     prisma.offering.findMany({ where: { date: { gte: yearStart, lte: yearEnd } }, take: 15, orderBy: { date: 'desc' }, include: { recordedByUser: { select: { firstName: true, lastName: true } } } }),
     prisma.expense.findMany({ where: { date: { gte: yearStart, lte: yearEnd } }, take: 15, orderBy: { date: 'desc' }, include: { recordedByUser: { select: { firstName: true, lastName: true } } } }),
     prisma.harambeeContribution.findMany({ where: { date: { gte: yearStart, lte: yearEnd } }, take: 15, orderBy: { date: 'desc' }, include: { harambee: { select: { title: true } }, recordedByUser: { select: { firstName: true, lastName: true } } } }),
+    prisma.eventContribution.findMany({ where: { eventDate: { gte: yearStart, lte: yearEnd }, contributionType: 'MONEY' }, take: 15, orderBy: { eventDate: 'desc' }, include: { recordedByUser: { select: { firstName: true, lastName: true } } } }),
   ]);
 
   const mapAct = (row, type) => {
@@ -937,10 +943,12 @@ async function getYearlyDashboardData({ year } = {}) {
       type === 'tithe' ? row.contributorName || '' :
       type === 'offering' ? row.serviceType || '' :
       type === 'expense' ? row.description || '' :
+      type === 'event' ? row.eventName || '' :
       row.harambee?.title || row.contributorName || '';
     const rec = row.recordedByUser;
+    const actDate = type === 'event' ? row.eventDate : row.date;
     return {
-      id: row.id, type, date: row.date,
+      id: row.id, type, date: actDate,
       amount: roundAmount(Number(row.amount || 0)),
       paymentMethod: row.paymentMethod,
       description: desc,
@@ -953,6 +961,7 @@ async function getYearlyDashboardData({ year } = {}) {
     ...rOfferings.map((r) => mapAct(r, 'offering')),
     ...rExpenses.map((r) => mapAct(r, 'expense')),
     ...rHarambees.map((r) => mapAct(r, 'harambee')),
+    ...rEvents.map((r) => mapAct(r, 'event')),
   ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 50);
 
   return {
@@ -962,6 +971,7 @@ async function getYearlyDashboardData({ year } = {}) {
       currentYear: {
         year: targetYear,
         tithes: tithesAmt, offerings: offeringsAmt, harambees: harambeesAmt,
+        events: eventsAmt,
         totalIncome, expenses: expensesAmt, netBalance,
         pendingCount, pendingTithes, pendingOfferings, pendingExpenses,
       },

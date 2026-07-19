@@ -1,3 +1,5 @@
+// Partners module removed — Payment model and PARTNER role deleted.
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,7 +12,6 @@ datasource db {
 // ─── ENUMS ───────────────────────────────────────────────────────────────────
 
 enum Role {
-  PARTNER
   MANAGER
   SUPER_ADMIN
 }
@@ -38,6 +39,42 @@ enum ExpenseCategory {
   MISCELLANEOUS
 }
 
+enum SalaryType {
+  PASTOR
+  CARETAKER
+  SECURITY_OFFICER
+}
+
+enum EventContributionType {
+  MONEY
+  IN_KIND
+}
+
+enum InKindCategory {
+  FOOD
+  CLOTHES
+  SUPPLIES
+  OTHERS
+}
+
+enum EventMoneyPurpose {
+  TITHE
+  OFFERING
+}
+
+enum ChurchEventType {
+  NEW_YEAR
+  GOOD_FRIDAY
+  EASTER_SUNDAY
+  EASTER_MONDAY
+  CHRISTMAS
+  BOXING_DAY
+  THANKSGIVING_SUNDAY
+  CHURCH_ANNIVERSARY
+  HARVEST_FESTIVAL
+  CUSTOM
+}
+
 enum AuditAction {
   CREATE
   UPDATE
@@ -55,7 +92,7 @@ model User {
   passwordHash    String
   firstName       String
   lastName        String
-  role            Role     @default(PARTNER)
+  role            Role     @default(MANAGER)
   phone           String?
   isActive        Boolean  @default(true)
   lastLoginAt     DateTime?
@@ -73,11 +110,10 @@ model User {
   offerings           Offering[]
   recordedExpenses    Expense[]              @relation("ExpenseRecorder")
   approvedExpenses    Expense[]              @relation("ExpenseApprover")
-  payments            Payment[]
   auditLogs           AuditLog[]
   createdHarambees    Harambee[]              @relation("HarambeeCreator")
   harambeeContributions HarambeeContribution[] @relation("HarambeeContributor")
-  confirmedPayments   Payment[]              @relation("PaymentConfirmer")
+  eventContributions  EventContribution[]     @relation("EventContributionRecorder")
 
   @@map("users")
 }
@@ -115,7 +151,7 @@ model Offering {
   contributorName String
   amount          Decimal        @db.Decimal(12, 2)
   date            DateTime
-  serviceType     String         // "Sunday Main", "Wednesday Bible Study", etc.
+  serviceType     String         // "Sunday Main" | "Sunday School"
   paymentMethod   PaymentMethod  @default(CASH)
   mpesaReceiptNo  String?
   bankName        String?
@@ -143,6 +179,7 @@ model Expense {
   amount          Decimal         @db.Decimal(12, 2)
   date            DateTime
   category        ExpenseCategory
+  salaryType      SalaryType?
   paymentMethod   PaymentMethod   @default(CASH)
   recipientName   String?
   mpesaReceiptNo  String?
@@ -181,7 +218,6 @@ model Harambee {
   updatedAt       DateTime       @updatedAt
 
   contributions       HarambeeContribution[]
-  payments           Payment[]
   createdByUser     User               @relation("HarambeeCreator", fields: [createdBy], references: [id])
 
   @@map("harambees")
@@ -205,30 +241,51 @@ model HarambeeContribution {
   @@map("harambee_contributions")
 }
 
-// ─── PAYMENT (Partner-initiated) ─────────────────────────────────────────────
+// ─── EVENT CONTRIBUTION ─────────────────────────────────────────────────────
 
-model Payment {
-  id              String         @id @default(uuid())
-  userId          String
-  amount          Decimal        @db.Decimal(12, 2)
-  paymentType     String         // "TITHE", "OFFERING", "HARAMBEE"
-  harambeeId      String?
-  paymentMethod   PaymentMethod  @default(MPESA)
-  mpesaReceiptNo  String?
-  phoneNumber     String?
-  status          PaymentStatus  @default(PENDING)
-  rejectionReason String?
-  confirmedBy     String?
-  confirmedAt     DateTime?
-  checkoutRequestId String?      @unique
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+model EventContribution {
+  id                  String                   @id @default(uuid())
 
-  user            User           @relation(fields: [userId], references: [id])
-  harambee        Harambee?      @relation(fields: [harambeeId], references: [id])
-  confirmedByUser User?          @relation("PaymentConfirmer", fields: [confirmedBy], references: [id])
+  // Contributor
+  contributorName     String
 
-  @@map("payments")
+  // Contribution type: MONEY or IN_KIND
+  contributionType    EventContributionType
+
+  // ── Money fields (null when contributionType = IN_KIND) ──────────
+  purpose             EventMoneyPurpose?       // TITHE or OFFERING
+  amount              Decimal?                 @db.Decimal(12, 2)
+  paymentMethod       PaymentMethod?
+  mpesaReceiptNo      String?
+  bankName            String?
+  accountNo           String?
+  idNumber            String?
+
+  // ── In-Kind fields (null when contributionType = MONEY) ──────────
+  inKindCategory      InKindCategory?          // FOOD, CLOTHES, SUPPLIES, OTHERS
+  inKindDescription   String?                  @db.Text
+  inKindOtherType     String?                  // used when inKindCategory = OTHERS
+
+  // ── Event details ─────────────────────────────────────────────────
+  eventType           ChurchEventType          @default(CUSTOM)
+  eventName           String                   // for CUSTOM: user-defined; for presets: auto-populated
+  eventDate           DateTime
+
+  // ── Programme team (JSON array of { name, role } objects) ─────────
+  programmeTeam       String?                  @db.Text  // stored as JSON string
+
+  // ── Metadata ──────────────────────────────────────────────────────
+  notes               String?
+  recordedBy          String
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  recordedByUser      User                     @relation("EventContributionRecorder", fields: [recordedBy], references: [id])
+
+  @@index([eventDate])
+  @@index([eventType])
+  @@index([contributionType])
+  @@map("event_contributions")
 }
 
 enum ServiceStatus {

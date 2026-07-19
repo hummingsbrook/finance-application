@@ -17,7 +17,6 @@ const MONTH_FULL = [
 ];
 const TABS = [
   'Income Statement',
-  'Statement of Activities',
   'Financial Position',
   'Cash Flow',
   'Budget vs Actual',
@@ -358,39 +357,19 @@ export default function Reports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effective.year, effective.month, reportMode, generateNarrative]);
 
-  // ── CSV export from breakdown.activities ─────────────────────────────────
-  const exportCSV = useCallback(() => {
-    if (!breakdown?.activities?.length) return;
-    const headers = ['Description', 'Category', 'Amount', 'Type'];
-    const rows = breakdown.activities.map((row) => [
-      row.description || '',
-      row.category || '',
-      row.amount,
-      row.type || '',
-    ]);
-    const escapeCsv = (v) => {
-      const s = String(v ?? '');
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const csv = [headers, ...rows].map((r) => r.map(escapeCsv).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `churchfinance_report_${effective.year}_${effective.month}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, [breakdown, effective.year, effective.month]);
+  // ── CSV export removed — was tied to the deleted Statement of Activities tab. ─
 
   // ─────────────────────────────────────────────────────────────────────────
   // Derived data for rendering
   // ─────────────────────────────────────────────────────────────────────────
-  // Income rows = Tithes, Offerings, Offering — <serviceType>, Harambees
+  // Income rows = Tithes, Offerings (total only), Harambees
   // Expense rows = each "Expense — <category>" aggregated row
+  // Per-service-type offering rows ("Offering — Sunday Main" etc.) are intentionally
+  // filtered out — only the combined "Offerings" total is shown.
   const allAgg = breakdown?.aggregated || [];
-  const incomeAggRows = allAgg.filter((r) => !r.category.startsWith('Expense'));
+  const incomeAggRows = allAgg.filter(
+    (r) => !r.category.startsWith('Expense') && !r.category.startsWith('Offering —')
+  );
   const expenseAggRows = allAgg.filter((r) => r.category.startsWith('Expense'));
 
   const totalIncome = Number(summary?.totalIncome || 0);
@@ -615,20 +594,13 @@ export default function Reports() {
         </button>
 
         {reportGenerated && (
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={exportCSV}
-              className="flex items-center justify-center gap-2 py-3 rounded-xl border border-outline-variant bg-surface-container-lowest hover:bg-surface-container transition-colors text-on-surface font-semibold"
-            >
-              <span className="material-symbols-outlined text-secondary">table_view</span>
-              Excel (CSV)
-            </button>
+          <div className="grid grid-cols-1 gap-3">
             <button
               onClick={() => window.print()}
               className="flex items-center justify-center gap-2 py-3 rounded-xl border border-outline-variant bg-surface-container-lowest hover:bg-surface-container transition-colors text-on-surface font-semibold"
             >
-              <span className="material-symbols-outlined text-error">picture_as_pdf</span>
-              Print / PDF
+              <span className="material-symbols-outlined text-secondary">print</span>
+              Print / Save as PDF
             </button>
           </div>
         )}
@@ -658,13 +630,6 @@ export default function Reports() {
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 18 }}>print</span>
                 Print
-              </button>
-              <button
-                onClick={exportCSV}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-label-md font-semibold"
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>download</span>
-                Download
               </button>
             </div>
           </div>
@@ -819,53 +784,7 @@ export default function Reports() {
               </div>
             )}
 
-            {/* ── Statement of Activities ─────────────────────────────── */}
-            {activeTab === 'Statement of Activities' && (
-              <div className="overflow-hidden rounded-xl border border-outline-variant">
-                <table className="w-full">
-                  <thead className="bg-surface-container">
-                    <tr className="text-left">
-                      <th className="px-4 py-3 text-label-sm text-on-surface-variant uppercase tracking-wider">Activity Description</th>
-                      <th className="px-4 py-3 text-label-sm text-on-surface-variant uppercase tracking-wider">Category</th>
-                      <th className="px-4 py-3 text-right text-label-sm text-on-surface-variant uppercase tracking-wider">Amount (KES)</th>
-                      <th className="px-4 py-3 text-right text-label-sm text-on-surface-variant uppercase tracking-wider">% of Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-outline-variant">
-                    {(breakdown.activities || []).map((row, i) => (
-                      <tr key={i} className="hover:bg-surface-container-low text-body-sm">
-                        <td className="px-4 py-3 text-on-surface">{row.description}</td>
-                        <td className="px-4 py-3 text-on-surface-variant">{row.category}</td>
-                        <td className={`px-4 py-3 text-right font-semibold ${row.type === 'income' ? 'text-primary' : 'text-error'}`}>
-                          {row.type === 'income' ? formatKES(row.amount) : `(${formatKES(Math.abs(row.amount))})`}
-                        </td>
-                        <td className="px-4 py-3 text-right text-on-surface-variant">{(row.pct || 0).toFixed(1)}%</td>
-                      </tr>
-                    ))}
-                    {(!breakdown.activities || breakdown.activities.length === 0) && (
-                      <tr>
-                        <td colSpan={4} className="px-4 py-8 text-center text-on-surface-variant">
-                          No activity recorded for this period.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                  <tfoot>
-                    <tr
-                      className="font-bold"
-                      style={{
-                        background: 'var(--color-primary-container)',
-                        color: 'var(--color-on-primary-container)',
-                      }}
-                    >
-                      <td className="px-4 py-3" colSpan={2}>Net Change in Fund Balance</td>
-                      <td className="px-4 py-3 text-right">{formatKES(netBalance)}</td>
-                      <td className="px-4 py-3 text-right">100.0%</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
+            {/* ── Statement of Activities tab — removed ── */}
 
             {/* ── Financial Position ─────────────────────────────────── */}
             {activeTab === 'Financial Position' && (
@@ -1309,47 +1228,7 @@ export default function Reports() {
               </div>
             </div>
 
-            {/* SECTION 3 — Statement of Activities */}
-            <div className="px-8 py-6 break-inside-avoid">
-              <div className="flex items-center gap-3 mb-4">
-                <span className="w-7 h-7 rounded-full bg-primary text-on-primary flex items-center justify-center text-label-sm font-bold">3</span>
-                <h3 className="text-headline-md text-on-surface">Statement of Activities</h3>
-                <div className="flex-1 border-b-2 border-primary-fixed-dim" />
-              </div>
-              <table className="w-full text-body-sm border border-outline-variant">
-                <thead className="bg-surface-container">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-on-surface">Description</th>
-                    <th className="px-3 py-2 text-left text-on-surface">Category</th>
-                    <th className="px-3 py-2 text-right text-on-surface">KES</th>
-                    <th className="px-3 py-2 text-right text-on-surface">% of Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(breakdown.activities || []).map((row, i) => (
-                    <tr key={i} className="border-t border-outline-variant">
-                      <td className="px-3 py-2">{row.description}</td>
-                      <td className="px-3 py-2 text-on-surface-variant">{row.category}</td>
-                      <td className={`px-3 py-2 text-right ${row.type === 'income' ? 'text-primary' : 'text-error'}`}>
-                        {row.type === 'income' ? formatKES(row.amount) : `(${formatKES(Math.abs(row.amount))})`}
-                      </td>
-                      <td className="px-3 py-2 text-right text-on-surface-variant">{(row.pct || 0).toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                  <tr
-                    className="border-t border-outline-variant font-bold"
-                    style={{
-                      background: 'var(--color-primary-container)',
-                      color: 'var(--color-on-primary-container)',
-                    }}
-                  >
-                    <td className="px-3 py-2" colSpan={2}>Net Change in Fund Balance</td>
-                    <td className="px-3 py-2 text-right">{formatKES(netBalance)}</td>
-                    <td className="px-3 py-2 text-right">100.0%</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {/* SECTION 3 — Statement of Activities — removed */}
 
             {/* SECTION 4 — Detailed Income Statement */}
             <div className="px-8 py-6 break-before-page break-inside-avoid">

@@ -2,16 +2,12 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 const NAV_ITEMS = {
-  PARTNER: [
-    { label: 'Dashboard', icon: 'dashboard', path: '/partner/dashboard' },
-    { label: 'Give', icon: 'payments', path: '/partner/give' },
-    { label: 'Settings', icon: 'settings', path: '/partner/settings' },
-  ],
   MANAGER: [
     { label: 'Overview', icon: 'dashboard', path: '/manager/overview' },
     { label: 'Tithes', icon: 'payments', path: '/manager/tithes' },
     { label: 'Offerings', icon: 'volunteer_activism', path: '/manager/offerings' },
     { label: 'Harambees', icon: 'groups', path: '/manager/harambees' },
+    { label: 'Events', icon: 'event', path: '/manager/events' },
     { label: 'Expenses', icon: 'account_balance_wallet', path: '/manager/expenses' },
     { label: 'Reports', icon: 'analytics', path: '/manager/reports' },
     { label: 'Services', icon: 'church', path: '/manager/services' },
@@ -29,7 +25,7 @@ const NAV_ITEMS = {
 export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }) {
   const { user, signOut } = useAuth();
   const location = useLocation();
-  const role = user?.role || 'PARTNER';
+  const role = user?.role || 'MANAGER';
   const items = NAV_ITEMS[role] || [];
 
   const handleSignOut = () => {

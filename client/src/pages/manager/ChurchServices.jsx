@@ -30,6 +30,13 @@ function ServiceCard({ service, onEdit, onToggleActive, onDelete }) {
 
   const hasAnyRole = roles.some((r) => service[r.key]);
 
+  // Parse a service date string as LOCAL time to avoid UTC off-by-one issues.
+  // Plain YYYY-MM-DD (10 chars) gets 'T00:00:00' appended so JS parses it as local.
+  const parseServiceDate = (dateStr) => {
+    if (!dateStr) return null;
+    return dateStr.length === 10 ? new Date(dateStr + 'T00:00:00') : new Date(dateStr);
+  };
+
   return (
     <div className="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden
       border border-outline-variant/50 hover:-translate-y-1 hover:shadow-md
@@ -47,10 +54,10 @@ function ServiceCard({ service, onEdit, onToggleActive, onDelete }) {
             {service.serviceDate ? (
               <>
                 <span className="text-label-sm font-bold text-on-surface-variant uppercase tracking-wider">
-                  {new Date(service.serviceDate).toLocaleDateString('en-KE',{month:'short'}).toUpperCase()}
+                  {parseServiceDate(service.serviceDate).toLocaleDateString('en-KE',{month:'short'}).toUpperCase()}
                 </span>
                 <span className="text-2xl font-black text-primary leading-none">
-                  {new Date(service.serviceDate).getDate().toString().padStart(2,'0')}
+                  {parseServiceDate(service.serviceDate).getDate().toString().padStart(2,'0')}
                 </span>
               </>
             ) : (
@@ -210,9 +217,15 @@ export default function ChurchServices() {
   today.setHours(0, 0, 0, 0);
 
   const upcomingServices = services.filter(s => {
-    if (!s.serviceDate) return s.isActive !== false;
-    return new Date(s.serviceDate) >= today;
-  }).sort((a, b) => new Date(a.serviceDate) - new Date(b.serviceDate));
+    if (s.isActive === false) return false;
+    if (!s.serviceDate) return s.status !== 'COMPLETED';
+    const d = new Date(s.serviceDate);
+    return !isNaN(d.getTime()) && d >= today;
+  }).sort((a, b) => {
+    const da = a.serviceDate ? new Date(a.serviceDate) : new Date('9999-12-31');
+    const db = b.serviceDate ? new Date(b.serviceDate) : new Date('9999-12-31');
+    return da - db;
+  });
 
   const pastServices = services.filter(s => {
     if (!s.serviceDate) return false;
@@ -683,7 +696,10 @@ export default function ChurchServices() {
                     <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
                       <td className="py-3 pr-4 text-body-sm text-on-surface whitespace-nowrap">
                         {s.serviceDate
-                          ? new Date(s.serviceDate).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })
+                          ? (s.serviceDate?.length === 10
+                              ? new Date(s.serviceDate + 'T00:00:00')
+                              : new Date(s.serviceDate)
+                            ).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })
                           : '—'}
                       </td>
                       <td className="py-3 pr-4 text-body-sm text-on-surface">{s.name}</td>

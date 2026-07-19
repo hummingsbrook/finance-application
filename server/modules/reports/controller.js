@@ -92,6 +92,9 @@ async function breakdown(req, res) {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
     const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    // Only run the expensive activities queries when the caller explicitly opts in.
+    // The Statement of Activities UI tab has been removed, so the default is false.
+    const includeActivities = req.query.includeActivities === 'true';
 
     if (isNaN(year) || year < 2000 || year > 2100) {
       return error(res, 'Invalid year.', 400, 'VALIDATION_ERROR');
@@ -100,7 +103,7 @@ async function breakdown(req, res) {
       return error(res, 'Invalid month. Must be 1-12.', 400, 'VALIDATION_ERROR');
     }
 
-    const result = await service.getBreakdown(year, month);
+    const result = await service.getBreakdown(year, month, includeActivities);
     return success(res, result);
   } catch (err) {
     console.error('[reports.breakdown] error:', err);
@@ -124,9 +127,12 @@ async function summaryYearly(req, res) {
 async function breakdownYearly(req, res) {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
+    const includeActivities = req.query.includeActivities === 'true';
+
     if (isNaN(year) || year < 2000 || year > 2100)
       return error(res, 'Invalid year.', 400, 'VALIDATION_ERROR');
-    const result = await service.getBreakdownYearly(year);
+
+    const result = await service.getBreakdownYearly(year, includeActivities);
     return success(res, result);
   } catch (err) {
     console.error('[reports.breakdownYearly] error:', err);

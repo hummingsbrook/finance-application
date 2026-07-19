@@ -127,51 +127,6 @@ async function signin(req, res) {
   }
 }
 
-async function signup(req, res) {
-  try {
-    const { email, password, firstName, lastName, phone } = req.body;
-
-    if (!email || !password || !firstName || !lastName) {
-      return error(res, 'Email, password, firstName, and lastName are required.', 400, 'VALIDATION_ERROR');
-    }
-
-    // FIXED: H-1 — server-side password complexity
-    const passwordError = validatePasswordStrength(password);
-    if (passwordError) {
-      return error(res, passwordError, 400, 'VALIDATION_ERROR');
-    }
-
-    // FIXED: H-3 — normalise email before lookup & storage
-    const normalisedEmail = email.trim().toLowerCase();
-    const existingUser = await service.findByEmail(normalisedEmail);
-    if (existingUser) {
-      return error(res, 'Email is already registered.', 409, 'EMAIL_EXISTS');
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    const user = await service.createUser({
-      email: normalisedEmail,
-      passwordHash,
-      firstName,
-      lastName,
-      phone,
-      role: 'PARTNER',
-    });
-
-    const token = generateToken(user);
-    const cookieExpiry = process.env.JWT_EXPIRES_IN || '24h';
-    setTokenCookie(res, req, token, cookieExpiry);
-
-    await service.createAuditEntry(user.id, 'CREATE', 'auth', `New user signed up`, req.ip);
-
-    const { passwordHash: _ph, ...userWithoutPassword } = user;
-    return success(res, { user: userWithoutPassword }, 201);
-  } catch (err) {
-    return error(res, 'An error occurred during sign up.', 500, 'SERVER_ERROR');
-  }
-}
-
 async function forgotPassword(req, res) {
   try {
     const { email } = req.body;
@@ -378,7 +333,6 @@ async function updateProfile(req, res) {
 
 module.exports = {
   signin,
-  signup,
   forgotPassword,
   resetPassword,
   changePassword,
