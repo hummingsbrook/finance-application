@@ -18,7 +18,6 @@ const PRESET_EVENTS = {
 
 const VALID_CONTRIBUTION_TYPES = ['MONEY', 'IN_KIND'];
 const VALID_IN_KIND_CATEGORIES = ['FOOD', 'CLOTHES', 'SUPPLIES', 'OTHERS'];
-const VALID_MONEY_PURPOSES     = ['TITHE', 'OFFERING'];
 const VALID_PAYMENT_METHODS    = ['CASH', 'MPESA', 'BANK_TRANSFER'];
 const VALID_EVENT_TYPES        = Object.keys(PRESET_EVENTS);
 
@@ -94,9 +93,6 @@ async function createEventContribution(data) {
 
   // Money-specific validation
   if (data.contributionType === 'MONEY') {
-    if (!data.purpose || !VALID_MONEY_PURPOSES.includes(data.purpose)) {
-      throw Object.assign(new Error('Purpose (TITHE or OFFERING) is required for money contributions.'), { status: 400 });
-    }
     if (!data.amount || Number(data.amount) <= 0) {
       throw Object.assign(new Error('Amount must be greater than zero for money contributions.'), { status: 400 });
     }
@@ -143,7 +139,6 @@ async function createEventContribution(data) {
       contributorName:    data.contributorName,
       contributionType:   data.contributionType,
       // Money fields
-      purpose:            data.contributionType === 'MONEY' ? data.purpose : null,
       amount:             data.contributionType === 'MONEY' ? roundAmount(data.amount) : null,
       paymentMethod:      data.contributionType === 'MONEY' ? (data.paymentMethod || 'CASH') : null,
       mpesaReceiptNo:     data.contributionType === 'MONEY' ? (data.mpesaReceiptNo || null) : null,
@@ -173,7 +168,6 @@ async function updateEventContribution(id, data) {
 
   if (data.contributorName !== undefined) updateData.contributorName = data.contributorName;
   if (data.contributionType !== undefined) updateData.contributionType = data.contributionType;
-  if (data.purpose !== undefined) updateData.purpose = data.purpose;
   if (data.amount !== undefined) updateData.amount = data.amount ? roundAmount(data.amount) : null;
   if (data.paymentMethod !== undefined) updateData.paymentMethod = data.paymentMethod;
   if (data.mpesaReceiptNo !== undefined) updateData.mpesaReceiptNo = data.mpesaReceiptNo;

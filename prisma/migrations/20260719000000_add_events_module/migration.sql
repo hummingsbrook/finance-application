@@ -5,9 +5,6 @@ CREATE TYPE "EventContributionType" AS ENUM ('MONEY', 'IN_KIND');
 CREATE TYPE "InKindCategory" AS ENUM ('FOOD', 'CLOTHES', 'SUPPLIES', 'OTHERS');
 
 -- CreateEnum
-CREATE TYPE "EventMoneyPurpose" AS ENUM ('TITHE', 'OFFERING');
-
--- CreateEnum
 CREATE TYPE "ChurchEventType" AS ENUM ('NEW_YEAR', 'GOOD_FRIDAY', 'EASTER_SUNDAY', 'EASTER_MONDAY', 'CHRISTMAS', 'BOXING_DAY', 'THANKSGIVING_SUNDAY', 'CHURCH_ANNIVERSARY', 'HARVEST_FESTIVAL', 'CUSTOM');
 
 -- CreateTable
@@ -15,7 +12,6 @@ CREATE TABLE "event_contributions" (
     "id" TEXT NOT NULL,
     "contributorName" TEXT NOT NULL,
     "contributionType" "EventContributionType" NOT NULL,
-    "purpose" "EventMoneyPurpose",
     "amount" DECIMAL(12,2),
     "paymentMethod" "PaymentMethod",
     "mpesaReceiptNo" TEXT,
