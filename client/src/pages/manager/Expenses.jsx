@@ -9,7 +9,7 @@ import KpiCard from '../../components/ui/KpiCard';
 import UniversalTable from '../../components/ui/UniversalTable';
 import ReactECharts from 'echarts-for-react';
 import { useFormValidation } from '../../hooks/useFormValidation';
-import { EXPENSE_CATEGORIES, CATEGORY_LABELS } from '../../constants/expenseCategories';
+import { EXPENSE_CATEGORIES, CATEGORY_LABELS, SALARY_TYPES, SALARY_TYPE_LABELS } from '../../constants/expenseCategories';
 
 const TABS = [
   { key: 'record', label: 'Record Expense', icon: 'add_circle' },
@@ -43,6 +43,7 @@ export default function Expenses() {
     amount:        '',
     date:          new Date().toISOString().split('T')[0],
     category:      '',
+    salaryType:    '',
     paymentMethod: 'cash',
     recipientName: '',
     mpesaReceiptNo:'',
@@ -67,12 +68,14 @@ export default function Expenses() {
   const [chartMode,  setChartMode]  = useState('monthly');  // 'monthly' | 'yearly'
   const [chartYear,  setChartYear]  = useState(now.getFullYear());
   const [chartMonth, setChartMonth] = useState(now.getMonth() + 1);
+  const [chartCategory, setChartCategory] = useState('');
   const defaultChartYear  = now.getFullYear();
   const defaultChartMonth = now.getMonth() + 1;
   const hasChartActiveFilter =
-    chartMode !== 'monthly' ||
-    chartYear  !== defaultChartYear  ||
-    chartMonth !== defaultChartMonth;
+    chartMode     !== 'monthly'        ||
+    chartYear     !== defaultChartYear ||
+    chartMonth    !== defaultChartMonth ||
+    chartCategory !== '';
 
   // ─── Table-level filter (between stacked chart and table) ───
   // From the mockup: Year, Month, Category, Sort By, Search
@@ -121,17 +124,17 @@ export default function Expenses() {
     const pos = saveScroll();
     try {
       if (chartMode === 'yearly') {
-        const res = await api.get('/expenses/summary', { params: { year: chartYear, mode: 'yearly' } });
+        const res = await api.get('/expenses/summary', { params: { year: chartYear, mode: 'yearly', ...(chartCategory ? { category: chartCategory } : {}) } });
         setSummary(res.data || null);
       } else {
         const res = await api.get('/expenses/summary', {
-          params: { year: chartYear, month: chartMonth, mode: 'monthly' },
+          params: { year: chartYear, month: chartMonth, mode: 'monthly', ...(chartCategory ? { category: chartCategory } : {}) },
         });
         setSummary(res.data || null);
       }
     } catch { setSummary(null); }
     finally { restoreScroll(pos); }
-  }, [chartMode, chartYear, chartMonth]);
+  }, [chartMode, chartYear, chartMonth, chartCategory]);
 
   // ─── Fetch expenses list (table) ───
   const fetchExpenses = useCallback(async () => {
@@ -162,7 +165,7 @@ export default function Expenses() {
   useEffect(() => {
     if (activeTab !== 'records') return;
     fetchSummary();
-  }, [chartMode, chartYear, chartMonth, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chartMode, chartYear, chartMonth, chartCategory, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-fetch table when table filter changes
   useEffect(() => {
@@ -185,6 +188,9 @@ export default function Expenses() {
     const errors = {};
     if (!form.description?.trim()) errors.description = 'Description is required.';
     if (!form.category)            errors.category    = 'Please select a category.';
+    if (form.category === 'SALARIES' && !form.salaryType) {
+      errors.salaryType = 'Please select a salary type.';
+    }
     const amt = parseFloat(form.amount);
     if (!form.amount || isNaN(amt) || amt <= 0) errors.amount = 'Enter a valid amount greater than 0.';
     if (!form.date) errors.date = 'Date is required.';
@@ -204,7 +210,8 @@ export default function Expenses() {
         amount:        parseFloat(form.amount),
         date:          form.date,
         category:      form.category,
-        paymentMethod: form.paymentMethod === 'bank' ? 'BANK_TRANSFER' : paymentMethod.toUpperCase(),
+        salaryType:    form.category === 'SALARIES' ? form.salaryType : null,
+        paymentMethod: form.paymentMethod === 'bank_transfer' ? 'BANK_TRANSFER' : form.paymentMethod.toUpperCase(),
         recipientName: form.recipientName  || null,
         mpesaReceiptNo:form.mpesaReceiptNo || null,
         bankName:      form.bankName       || null,
@@ -217,7 +224,7 @@ export default function Expenses() {
       setForm({
         description:'', amount:'',
         date: new Date().toISOString().split('T')[0],
-        category:'', paymentMethod:'cash', recipientName:'',
+        category:'', salaryType:'', paymentMethod:'cash', recipientName:'',
         mpesaReceiptNo:'', bankName:'', accountNo:'', idNumber:'', notes:'',
       });
       fetchRecentExpenses();
@@ -433,6 +440,28 @@ export default function Expenses() {
                     {fieldErrors.category && <p className="text-label-sm text-error mt-1">{fieldErrors.category}</p>}
                   </div>
 
+                  {form.category === 'SALARIES' && (
+                    <div>
+                      <label className="text-label-md text-on-surface-variant">Salary Type</label>
+                      <div className="relative mt-1.5">
+                        <select
+                          name="salaryType"
+                          value={form.salaryType}
+                          onChange={(e) => { handleChange(e); clearFieldError('salaryType'); }}
+                          required
+                          className={`w-full px-4 py-2.5 bg-surface-container-lowest border rounded-lg text-body-lg text-on-surface outline-none transition-colors appearance-none ${fieldErrors.salaryType ? 'border-error focus:border-error focus:ring-1 focus:ring-error' : 'border-outline-variant focus:border-secondary focus:ring-1 focus:ring-secondary'}`}
+                        >
+                          <option value="">Select salary type</option>
+                          {SALARY_TYPES.map((t) => (
+                            <option key={t} value={t}>{SALARY_TYPE_LABELS[t]}</option>
+                          ))}
+                        </select>
+                        <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant" style={{ fontSize: 20 }}>expand_more</span>
+                      </div>
+                      {fieldErrors.salaryType && <p className="text-label-sm text-error mt-1">{fieldErrors.salaryType}</p>}
+                    </div>
+                  )}
+
                   <Input
                     label="Amount (KES)"
                     name="amount"
@@ -623,6 +652,7 @@ export default function Expenses() {
                       setChartMode('monthly');
                       setChartYear(defaultChartYear);
                       setChartMonth(defaultChartMonth);
+                      setChartCategory('');
                     }}
                     className="text-outline hover:text-error transition-colors p-1 rounded-full hover:bg-surface-container"
                     aria-label="Clear chart filter"
@@ -680,6 +710,22 @@ export default function Expenses() {
                   <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-primary pointer-events-none" style={{ fontSize: 18 }}>arrow_drop_down</span>
                 </div>
               )}
+
+              {/* Category filter */}
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" style={{ fontSize: 18 }}>category</span>
+                <select
+                  value={chartCategory}
+                  onChange={(e) => setChartCategory(e.target.value)}
+                  className="w-full pl-8 pr-2 py-2 h-10 bg-surface border border-outline-variant rounded-lg text-body-md text-on-surface focus:border-primary focus:ring-0 appearance-none cursor-pointer hover:border-outline transition-colors"
+                >
+                  <option value="">All Categories</option>
+                  {EXPENSE_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" style={{ fontSize: 18 }}>arrow_drop_down</span>
+              </div>
 
               {/* Refresh */}
               <button
@@ -757,25 +803,42 @@ export default function Expenses() {
               })()}
             </div>
 
-            {/* Bar — Trend (6-month or 4-year) */}
+            {/* Bar — Salary Categories (replaces 6-Month/4-Year Trend) */}
             <div className="bg-surface-container-lowest rounded-xl card-shadow border border-outline-variant/30 p-6 flex flex-col gap-4">
-              <h3 className="text-headline-md text-primary">{trendLabel}</h3>
+              <h3 className="text-headline-md text-primary">Salary Categories</h3>
               {(() => {
-                if (!trendData.length) return <div className="h-64 flex items-center justify-center"><p className="text-body-sm text-on-surface-variant">No trend data available.</p></div>;
+                const salaryData = summary?.salaryBreakdown || [];
+                const hasSalaryData = salaryData.some((s) => s.total > 0);
+                if (!hasSalaryData) {
+                  return (
+                    <div className="h-64 flex flex-col items-center justify-center gap-2">
+                      <span className="material-symbols-outlined text-on-surface-variant/30" style={{ fontSize: 48 }}>payments</span>
+                      <p className="text-body-sm text-on-surface-variant">No salary expenses for this period.</p>
+                    </div>
+                  );
+                }
+                const SALARY_COLORS = {
+                  PASTOR:           '#00450d',
+                  CARETAKER:        '#1c6d24',
+                  SECURITY_OFFICER: '#a0f399',
+                };
                 return (
                   <ReactECharts
                     notMerge={true}
                     style={{ height: '300px', width: '100%' }}
                     option={{
-                      grid: { left: 72, right: 24, top: 16, bottom: 48 },
+                      grid: { left: 80, right: 24, top: 16, bottom: 48 },
                       tooltip: {
                         trigger: 'axis',
                         axisPointer: { type: 'shadow' },
-                        formatter: (params) => `${params[0].name}<br/>KES ${Number(params[0].value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`,
+                        formatter: (params) =>
+                          params[0]
+                            ? `${params[0].name}<br/>KES ${Number(params[0].value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`
+                            : '',
                       },
                       xAxis: {
                         type: 'category',
-                        data: trendData.map((d) => d.label),
+                        data: salaryData.map((d) => SALARY_TYPE_LABELS[d.type] || d.type),
                         axisLine: { lineStyle: { color: '#c0c9bb' } },
                         axisTick: { show: false },
                         axisLabel: { color: '#41493e', fontSize: 11 },
@@ -783,20 +846,28 @@ export default function Expenses() {
                       },
                       yAxis: {
                         type: 'value',
-                        axisLabel: { color: '#41493e', fontSize: 11, formatter: (v) => `KES ${(v / 1000).toFixed(0)}k` },
+                        axisLabel: {
+                          color: '#41493e',
+                          fontSize: 11,
+                          formatter: (v) => `KES ${(v / 1000).toFixed(0)}k`,
+                        },
                         splitLine: { lineStyle: { color: '#f0eded' } },
                         axisLine: { show: false },
                       },
                       series: [{
-                        name: 'Expenses',
+                        name: 'Salary',
                         type: 'bar',
-                        data: trendData.map((d) => d.total),
-                        itemStyle: { color: '#b71c1c', borderRadius: [4, 4, 0, 0] },
-                        barMaxWidth: 48,
+                        data: salaryData.map((d) => ({
+                          value: d.total,
+                          itemStyle: { color: SALARY_COLORS[d.type] || '#00450d', borderRadius: [4, 4, 0, 0] },
+                        })),
+                        barMaxWidth: 64,
                         label: {
-                          show: true, position: 'top',
-                          formatter: (p) => p.value > 0 ? `KES ${(p.value / 1000).toFixed(0)}k` : '',
-                          fontSize: 10, color: '#41493e',
+                          show: true,
+                          position: 'top',
+                          formatter: (p) => p.value > 0 ? `KES ${(p.value / 1000).toFixed(1)}k` : '',
+                          fontSize: 10,
+                          color: '#41493e',
                         },
                       }],
                     }}
@@ -1039,7 +1110,14 @@ export default function Expenses() {
               <tr key={row.id || idx} className={`hover:bg-surface-container transition-colors ${idx % 2 === 1 ? 'bg-surface-container-low/30' : ''}`}>
                 <td className="px-6 py-4 text-body-sm">{formatDate(row.date)}</td>
                 <td className="px-6 py-4">{categoryBadge(row.category)}</td>
-                <td className="px-6 py-4 text-body-sm">{row.description || '—'}</td>
+                <td className="px-6 py-4 text-body-sm">
+                  {row.description || '—'}
+                  {row.salaryType && (
+                    <span className="ml-2 text-[10px] font-bold uppercase text-on-surface-variant/70">
+                      ({SALARY_TYPE_LABELS[row.salaryType] || row.salaryType})
+                    </span>
+                  )}
+                </td>
                 <td className="px-6 py-4 text-body-sm">{row.recipientName || '—'}</td>
                 <td className="px-6 py-4 text-right font-bold text-primary">{formatKES(row.amount)}</td>
                 <td className="px-6 py-4">{paymentBadge(row.paymentMethod)}</td>

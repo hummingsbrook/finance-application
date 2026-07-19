@@ -23,7 +23,7 @@ export default function AdminDashboard() {
     db: 'checking',
     api: 'checking',
   });
-  const [roleData, setRoleData] = useState({ partners: 0, managers: 0, admins: 0, total: 0 });
+  const [roleData, setRoleData] = useState({ managers: 0, admins: 0, total: 0 });
   const [lastFetchTime, setLastFetchTime] = useState(null);
 
   const fetchDashboard = useCallback(async () => {
@@ -60,11 +60,10 @@ export default function AdminDashboard() {
 
         setStats((prev) => ({ ...prev, totalUsers, activeUsers }));
 
-        // User Roles donut — compute from actual data
-        const partners = users.filter(u => u.role === 'PARTNER').length;
+        // User Roles donut — compute from actual data (PARTNER role removed)
         const managers = users.filter(u => u.role === 'MANAGER').length;
         const admins = users.filter(u => u.role === 'SUPER_ADMIN').length;
-        setRoleData({ partners, managers, admins, total: totalUsers });
+        setRoleData({ managers, admins, total: totalUsers });
       }
 
       // Dashboard
@@ -120,7 +119,6 @@ export default function AdminDashboard() {
 
   // Donut chart calculations
   const CIRCUMFERENCE = 2 * Math.PI * 16; // ~100.5
-  const partnerLen = roleData.total > 0 ? (roleData.partners / roleData.total) * CIRCUMFERENCE : 0;
   const managerLen = roleData.total > 0 ? (roleData.managers / roleData.total) * CIRCUMFERENCE : 0;
   const adminLen = roleData.total > 0 ? (roleData.admins / roleData.total) * CIRCUMFERENCE : 0;
 
@@ -161,7 +159,6 @@ export default function AdminDashboard() {
   ];
 
   const quickActions = [
-    { label: 'Add User', icon: 'person_add', path: '/admin/users/create', color: 'text-primary' },
     { label: 'Backup', icon: 'cloud_download', path: '/admin/database', color: 'text-secondary' },
     { label: 'Audit Logs', icon: 'history', path: '/admin/audit-logs', color: 'text-tertiary-container' },
     { label: 'Expenses', icon: 'receipt_long', path: '/admin/expense-oversight', color: 'text-on-surface-variant' },
@@ -376,7 +373,6 @@ export default function AdminDashboard() {
                     },
                     emphasis: { label: { show: true } },
                     data: [
-                      { value: roleData.partners, name: 'Partners', itemStyle: { color: '#4caf50' } },
                       { value: roleData.managers, name: 'Managers', itemStyle: { color: '#a5d6a7' } },
                       { value: roleData.admins, name: 'Admins', itemStyle: { color: '#2e3b2f' } },
                     ],
@@ -386,7 +382,6 @@ export default function AdminDashboard() {
             />
             <div className="mt-8 space-y-3 w-full">
               {[
-                { color: 'bg-secondary', label: 'Partners', count: roleData.partners },
                 { color: 'bg-primary-fixed-dim', label: 'Managers', count: roleData.managers },
                 { color: 'bg-tertiary-container', label: 'Admins', count: roleData.admins },
               ].map((r) => (

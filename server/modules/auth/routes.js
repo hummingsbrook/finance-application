@@ -3,7 +3,6 @@ const { authenticate } = require('../../middleware/auth');
 const ctrl = require('./controller');
 
 router.post('/signin', ctrl.signin);
-router.post('/signup', ctrl.signup);
 router.post('/forgot-password', ctrl.forgotPassword);
 router.post('/reset-password', ctrl.resetPassword);
 router.post('/change-password', authenticate, ctrl.changePassword);

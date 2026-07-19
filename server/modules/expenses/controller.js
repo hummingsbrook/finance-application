@@ -26,8 +26,8 @@ async function list(req, res) {
 
 async function summary(req, res) {
   try {
-    const { year, month, mode } = req.query;
-    const result = await service.getExpenseSummary({ year, month, mode });
+    const { year, month, mode, category } = req.query;
+    const result = await service.getExpenseSummary({ year, month, mode, category });
     return success(res, result);
   } catch (err) {
     console.error('[expenses.summary] error:', err);
@@ -49,10 +49,14 @@ async function yearlySummary(req, res) {
 
 async function create(req, res) {
   try {
-    let { description, amount, date, category, paymentMethod, recipientName, mpesaReceiptNo, bankName, accountNo, idNumber, notes } = req.body;
+    let { description, amount, date, category, salaryType, paymentMethod, recipientName, mpesaReceiptNo, bankName, accountNo, idNumber, notes } = req.body;
 
     if (!description || !amount || !date || !category) {
       return error(res, 'description, amount, date, and category are required.', 400, 'VALIDATION_ERROR');
+    }
+
+    if (category === 'SALARIES' && !salaryType) {
+      return error(res, 'Salary type is required for Salaries expenses.', 400, 'VALIDATION_ERROR');
     }
 
     if (Number(amount) <= 0) {
@@ -86,6 +90,7 @@ async function create(req, res) {
       amount,
       date,
       category,
+      salaryType: salaryType || null,
       paymentMethod: paymentMethod || 'CASH',
       recipientName,
       mpesaReceiptNo,

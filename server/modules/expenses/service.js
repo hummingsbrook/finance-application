@@ -4,6 +4,7 @@ const { parsePagination } = require('../../lib/pagination');
 
 const VALID_CATEGORIES = ['SALARIES', 'UTILITIES', 'MAINTENANCE', 'EVENTS', 'TRANSPORT', 'SUPPLIES', 'MISCELLANEOUS'];
 const VALID_STATUSES = ['PENDING', 'CONFIRMED', 'REJECTED', 'FAILED'];
+const VALID_SALARY_TYPES = ['PASTOR', 'CARETAKER', 'SECURITY_OFFICER'];
 
 async function listExpenses(filters = {}) {
   const { page, limit, skip } = parsePagination(filters);
@@ -64,6 +65,11 @@ async function getExpenseSummary(filters = {}) {
   const month = filters.month != null ? parseInt(filters.month) : now.getMonth() + 1;
   const mode = filters.mode || 'monthly'; // 'monthly' | 'yearly'
 
+  // Optional category filter applied to all KPI + trend queries.
+  const { category } = filters;
+  const VALID_CATS = ['SALARIES', 'UTILITIES', 'MAINTENANCE', 'EVENTS', 'TRANSPORT', 'SUPPLIES', 'MISCELLANEOUS'];
+  const categoryFilter = (category && VALID_CATS.includes(category)) ? { category } : {};
+
   let kpiStart, kpiEnd;
   if (mode === 'yearly') {
     // Full current year
@@ -75,7 +81,7 @@ async function getExpenseSummary(filters = {}) {
     kpiEnd   = new Date(year, month, 1);
   }
 
-  const confirmedWhere = { status: 'CONFIRMED', date: { gte: kpiStart, lt: kpiEnd } };
+  const confirmedWhere = { status: 'CONFIRMED', date: { gte: kpiStart, lt: kpiEnd }, ...categoryFilter };
 
   // ─── Trend windows ───
   let trendWindows = [];
@@ -120,8 +126,8 @@ async function getExpenseSummary(filters = {}) {
       orderBy: { _sum: { amount: 'desc' } },
     }),
     prisma.expense.findMany({
-      where: { status: 'CONFIRMED', date: { gte: trendStart, lt: trendEnd } },
-      select: { amount: true, date: true, category: true },
+      where: { status: 'CONFIRMED', date: { gte: trendStart, lt: trendEnd }, ...categoryFilter },
+      select: { amount: true, date: true, category: true, salaryType: true },
     }),
   ]);
 
@@ -174,7 +180,7 @@ async function getExpenseSummary(filters = {}) {
 
   // ─── Category trend (stacked bar) — by month or year ───
   // For each trend window, give per-category totals so the stacked bar chart can show category breakdown over time.
-  const VALID_CATS = ['SALARIES', 'UTILITIES', 'MAINTENANCE', 'EVENTS', 'TRANSPORT', 'SUPPLIES', 'MISCELLANEOUS'];
+  // (VALID_CATS is declared at the top of getExpenseSummary along with categoryFilter.)
 
   const categoryTrend = trendWindows.map((w) => {
     const rows = trendGroups.filter((r) => {
@@ -190,7 +196,26 @@ async function getExpenseSummary(filters = {}) {
     return entry;
   });
 
-  return { totalAmount, count, mostFrequentCategory, byCategory, monthlyTrend, categoryTrend };
+  // ─── Salary type breakdown (used when category = SALARIES or as standalone widget) ─────
+  const SALARY_TYPES = ['PASTOR', 'CARETAKER', 'SECURITY_OFFICER'];
+  const salaryRows = trendGroups.filter((r) => r.category === 'SALARIES');
+
+  // Breakdown for current period only (not the full trend range)
+  const periodSalaryRows = salaryRows.filter((r) => {
+    const d = new Date(r.date);
+    return d >= kpiStart && d < kpiEnd;
+  });
+
+  const salaryBreakdown = SALARY_TYPES.map((type) => ({
+    type,
+    total: roundMoney(
+      periodSalaryRows
+        .filter((r) => r.salaryType === type)
+        .reduce((s, r) => s + (Number(r.amount) || 0), 0)
+    ),
+  }));
+
+  return { totalAmount, count, mostFrequentCategory, byCategory, monthlyTrend, categoryTrend, salaryBreakdown };
 }
 
 async function getExpenseOversight(filters = {}) {
@@ -338,6 +363,9 @@ async function createExpense(data) {
       amount,
       date: new Date(data.date),
       category: data.category,
+      salaryType: (data.category === 'SALARIES' && data.salaryType && VALID_SALARY_TYPES.includes(data.salaryType))
+        ? data.salaryType
+        : null,
       paymentMethod: data.paymentMethod || 'CASH',
       recipientName: data.recipientName || null,
       mpesaReceiptNo: data.mpesaReceiptNo || null,
@@ -384,6 +412,15 @@ async function updateExpense(id, data) {
   if (data.amount !== undefined) updateData.amount = roundMoney(data.amount);
   if (data.date !== undefined) updateData.date = new Date(data.date);
   if (data.category !== undefined && VALID_CATEGORIES.includes(data.category)) updateData.category = data.category;
+  if (data.salaryType !== undefined) {
+    updateData.salaryType = (data.category === 'SALARIES' && data.salaryType && VALID_SALARY_TYPES.includes(data.salaryType))
+      ? data.salaryType
+      : null;
+  }
+  // Also clear salaryType if category changes away from SALARIES
+  if (data.category !== undefined && data.category !== 'SALARIES') {
+    updateData.salaryType = null;
+  }
   if (data.paymentMethod !== undefined) updateData.paymentMethod = data.paymentMethod;
   if (data.recipientName !== undefined) updateData.recipientName = data.recipientName;
   if (data.mpesaReceiptNo !== undefined) updateData.mpesaReceiptNo = data.mpesaReceiptNo;

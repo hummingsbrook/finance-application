@@ -6,7 +6,6 @@ import { formatDateTime } from '../../lib/utils';
 const ROLE_BADGE = {
   SUPER_ADMIN: 'bg-error-container text-on-error-container',
   MANAGER:     'bg-primary-container text-on-primary-container',
-  PARTNER:     'bg-secondary-container text-on-secondary-container',
 };
 
 const ACTION_BADGE = {

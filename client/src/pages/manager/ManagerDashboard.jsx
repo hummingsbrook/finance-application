@@ -19,6 +19,7 @@ const CATEGORY_BADGE = {
   offering: { bg: 'bg-secondary-container', text: 'text-on-secondary-container', label: 'OFFERING' },
   expense: { bg: 'bg-error/10', text: 'text-error', label: 'EXPENSE' },
   harambee: { bg: 'bg-tertiary-fixed/40', text: 'text-tertiary', label: 'HARAMBEE' },
+  event: { bg: 'bg-tertiary-fixed/40', text: 'text-tertiary', label: 'EVENT' },
 };
 
 function categoryBadge(type) {
@@ -333,6 +334,7 @@ export default function ManagerDashboard() {
   const allTimeTithes   = allTime.tithes || 0;
   const allTimeOfferings = allTime.offerings || 0;
   const allTimeExpenses = allTime.expenses || 0;
+  const allTimeEvents   = allTime.events || 0;
 
   const lastPeriodIncome   = isYearly ? (prevYearSum.totalIncome || 0)  : (dashboard?.trend?.[4]?.income   || 0);
   const lastPeriodExpenses = isYearly ? (prevYearSum.expenses || 0)     : (dashboard?.trend?.[4]?.expenses || 0);
@@ -703,6 +705,31 @@ export default function ManagerDashboard() {
                 />
               </div>
             </div>
+
+            {/* Events stream */}
+            {(() => {
+              const eventsCurrent = isYearly
+                ? (yearSummary.events || 0)
+                : (currentMonth.events || 0);
+              const eventsBase = isYearly
+                ? (prevYearSum.totalIncome * 0.1 || 1)
+                : (allTimeEvents / 12 || 1);
+              const eventsPct = Math.min(150, (eventsCurrent / eventsBase) * 100);
+              return (
+                <div>
+                  <div className="flex items-center justify-between text-label-md mb-1">
+                    <span className="text-on-surface">Events</span>
+                    <span className="text-on-surface-variant">{eventsPct.toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full bg-surface-container rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-tertiary-fixed h-2 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, eventsPct)}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Expense Focus */}

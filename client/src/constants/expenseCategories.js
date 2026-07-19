@@ -17,3 +17,11 @@ export const CATEGORY_LABELS = {
   SUPPLIES: 'Supplies',
   MISCELLANEOUS: 'Miscellaneous',
 };
+
+export const SALARY_TYPES = ['PASTOR', 'CARETAKER', 'SECURITY_OFFICER'];
+
+export const SALARY_TYPE_LABELS = {
+  PASTOR:           'Pastor',
+  CARETAKER:        'Caretaker',
+  SECURITY_OFFICER: 'Security Officer',
+};

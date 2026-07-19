@@ -84,7 +84,6 @@ if (!isTestEnv) {
 // /api mount point because Express strips the prefix inside app.use('/api',…).
 const CSRF_EXEMPT_PATHS = new Set([
   '/auth/signin',
-  '/auth/signup',
   '/auth/forgot-password',
   '/auth/reset-password',
   '/health',
@@ -116,9 +115,9 @@ const titheRoutes   = require('./modules/tithes/routes');
 const offeringRoutes = require('./modules/offerings/routes');
 const expenseRoutes = require('./modules/expenses/routes');
 const harambeeRoutes = require('./modules/harambees/routes');
-const paymentRoutes = require('./modules/payments/routes');
 const serviceRoutes = require('./modules/services/routes');
 const reportRoutes  = require('./modules/reports/routes');
+const eventRoutes   = require('./modules/events/routes');
 const userRoutes    = require('./modules/users/routes');
 const auditRoutes   = require('./modules/audit/routes');
 const backupRoutes  = require('./modules/backup/routes'); // H-4
@@ -146,13 +145,6 @@ const authLimiter = rateLimit({
   skip: localSkip,
 });
 
-const signupLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,   // 1 hour
-  max: 5,
-  message: { success: false, message: 'Too many account creation attempts. Please try again later.', code: 'RATE_LIMITED' },
-  skip: localSkip,
-});
-
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,         // 1 minute
   max: 100,
@@ -165,7 +157,6 @@ const generalLimiter = rateLimit({
 app.use('/api/', generalLimiter);
 
 app.use('/api/auth/signin',          authLimiter,   authRoutes);
-app.use('/api/auth/signup',          signupLimiter, authRoutes);
 app.use('/api/auth/forgot-password', authLimiter,   authRoutes);
 app.use('/api/auth',   authRoutes);
 
@@ -173,9 +164,9 @@ app.use('/api/tithes',    titheRoutes);
 app.use('/api/offerings', offeringRoutes);
 app.use('/api/expenses',  expenseRoutes);
 app.use('/api/harambees', harambeeRoutes);
-app.use('/api/payments',  paymentRoutes);
 app.use('/api/services',  serviceRoutes);
 app.use('/api/reports',   reportRoutes);
+app.use('/api/events',    eventRoutes);
 app.use('/api/users',     userRoutes);
 app.use('/api/audit',     auditRoutes);
 app.use('/api/admin',     backupRoutes);

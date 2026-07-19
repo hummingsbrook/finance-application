@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import ServicesOverlay from '../ui/ServicesOverlay';
 
 export default function TopBar({ title, subtitle, onHealthClick, onMenuClick, sidebarCollapsed }) {
   const handleHealthClick = typeof onHealthClick === 'function' ? onHealthClick : () => {};
@@ -32,7 +31,7 @@ export default function TopBar({ title, subtitle, onHealthClick, onMenuClick, si
   }, []);
   
   // ── Services overlay ──
-  const [servicesOpen, setServicesOpen] = useState(false);
+  // (removed — Church Services overlay and notification bell deleted)
 
   // Compute left offset based on collapsed state (falls back gracefully if prop absent)
   const leftOffset = sidebarCollapsed ? 'md:left-16' : 'md:left-60';
@@ -86,18 +85,8 @@ export default function TopBar({ title, subtitle, onHealthClick, onMenuClick, si
               {isDark ? 'light_mode' : 'dark_mode'}
             </span>
           </button>
-	   /*}
-          {/* Services / notification bell */}
-          <button
-            type="button"
-            onClick={() => setServicesOpen(true)}
-            className="relative p-2 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors"
-            aria-label="View church services"
-            title="Church Services"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 22 }}>notifications</span>
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary" />
-          </button>
+           /*}
+          {/* Services / notification bell — removed */}
 
           {/* Financial health (admin/manager only — kept from original) */}
           {typeof onHealthClick === 'function' && (
@@ -113,9 +102,6 @@ export default function TopBar({ title, subtitle, onHealthClick, onMenuClick, si
           )}
         </div>
       </header>
-
-      {/* Services overlay — rendered outside header to avoid z-index nesting */}
-      <ServicesOverlay isOpen={servicesOpen} onClose={() => setServicesOpen(false)} />
     </>
   );
 }

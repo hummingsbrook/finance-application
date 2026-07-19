@@ -60,12 +60,6 @@ export default function SignIn() {
         >
           Sign In
         </Link>
-        <Link
-          to="/signup"
-          className="flex-1 text-center py-3 text-label-md font-medium text-on-surface-variant hover:bg-surface-container transition-colors"
-        >
-          Create Account
-        </Link>
       </div>
 
       {/* Form */}

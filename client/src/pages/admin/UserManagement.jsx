@@ -12,7 +12,6 @@ const PAGE_SIZE = 10;
 const ROLE_STYLES = {
   SUPER_ADMIN: { bg: 'bg-[#FFF8E1] text-[#7B3F00] border border-[#FFD54F]', label: 'Super Admin' },
   MANAGER: { bg: 'bg-primary/10 text-primary', label: 'Manager' },
-  PARTNER: { bg: 'bg-secondary-container text-on-secondary-container', label: 'Partner' },
 };
 
 const STATUS_STYLES = {
@@ -108,7 +107,7 @@ export default function UserManagement() {
         lastName: user.lastName || '',
         email: user.email || '',
         phone: user.phone || '',
-        role: user.role || 'PARTNER',
+        role: user.role || 'MANAGER',
       });
     }
   };
@@ -208,13 +207,6 @@ export default function UserManagement() {
           </span>
         </button>
         <button
-          onClick={() => navigate('/admin/users/create')}
-          className="px-6 py-3 text-label-md text-on-surface-variant border-b-2 border-transparent hover:border-outline hover:text-on-surface whitespace-nowrap flex items-center gap-2 transition-colors active:scale-95"
-        >
-          <span className="material-symbols-outlined text-[20px]">person_add</span>
-          Create Account
-        </button>
-        <button
           onClick={() => navigate('/admin/login-history')}
           className="px-6 py-3 text-label-md text-on-surface-variant border-b-2 border-transparent hover:border-outline hover:text-on-surface whitespace-nowrap flex items-center gap-2 transition-colors active:scale-95"
         >
@@ -252,7 +244,6 @@ export default function UserManagement() {
               className="px-4 py-2 border border-outline-variant/50 bg-surface text-body-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all rounded-full"
             >
               <option value="">All Roles</option>
-              <option value="PARTNER">Partner</option>
               <option value="MANAGER">Manager</option>
               <option value="SUPER_ADMIN">Super Admin</option>
             </select>
@@ -322,7 +313,7 @@ export default function UserManagement() {
                 users.map((user) => {
                   const isActive = user.isActive !== false;
                   const isExpanded = expandedId === user.id;
-                  const roleStyle = ROLE_STYLES[user.role] || ROLE_STYLES.PARTNER;
+                  const roleStyle = ROLE_STYLES[user.role] || ROLE_STYLES.MANAGER;
                   const statusStyle = isActive ? STATUS_STYLES.ACTIVE : STATUS_STYLES.INACTIVE;
                   const initials = getInitials(user.firstName, user.lastName);
 
@@ -443,7 +434,6 @@ export default function UserManagement() {
                                       onChange={(e) => handleEditChange('role', e.target.value)}
                                       className="w-full max-w-xs px-3 py-2 border border-outline-variant/50 bg-surface text-body-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all appearance-none rounded-xl pr-10"
                                     >
-                                      <option value="PARTNER">Partner</option>
                                       <option value="MANAGER">Manager</option>
                                       <option value="SUPER_ADMIN">Super Admin</option>
                                     </select>
