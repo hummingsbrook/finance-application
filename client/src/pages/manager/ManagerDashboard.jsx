@@ -28,10 +28,10 @@ function categoryBadge(type) {
 }
 
 // ─── Financial Health overlay ─────────────────────────────────
-function computeHealth({ currentIncome, currentExpenses, currentNet, allTimeTithes, allTimeOfferings }) {
+function computeHealth({ currentIncome, currentExpenses, currentNet, allTimeTithes, allTimeOfferings, allTimeEvents }) {
   const incomeVsBudget =
-    currentIncome > 0 && allTimeTithes + allTimeOfferings > 0
-      ? (currentIncome / ((allTimeTithes + allTimeOfferings) / 12)) * 100
+    currentIncome > 0 && allTimeTithes + allTimeOfferings + allTimeEvents > 0
+      ? (currentIncome / ((allTimeTithes + allTimeOfferings + allTimeEvents) / 12)) * 100
       : 100;
 
   const expenseRatio = currentIncome > 0 ? (currentExpenses / currentIncome) * 100 : 0;
@@ -370,6 +370,7 @@ export default function ManagerDashboard() {
       currentNet,
       allTimeTithes,
       allTimeOfferings,
+      allTimeEvents,
     });
   }, [dashboard, currentIncome, currentExpenses, currentNet, allTimeTithes, allTimeOfferings]);
 
