@@ -58,7 +58,7 @@ async function getFinancialSummary() {
       // Event money contributions for the current month
       eventService.getEventsTotalForPeriod({ start: startOfMonth, end: endOfMonth }),
       // Event money contributions all-time
-      eventService.getEventsTotalForPeriod({ start: new Date(0), end: new Date(8640000000000000) }),
+      eventService.getEventsTotalForPeriod({ start: new Date(0), end: new Date('2099-12-31T23:59:59.000Z') }),
     ]);
 
   const monthIncome =
