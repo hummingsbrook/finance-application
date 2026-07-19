@@ -1,12 +1,3 @@
--- CreateEnum
-CREATE TYPE "EventContributionType" AS ENUM ('MONEY', 'IN_KIND');
-
--- CreateEnum
-CREATE TYPE "InKindCategory" AS ENUM ('FOOD', 'CLOTHES', 'SUPPLIES', 'OTHERS');
-
--- CreateEnum
-CREATE TYPE "ChurchEventType" AS ENUM ('NEW_YEAR', 'GOOD_FRIDAY', 'EASTER_SUNDAY', 'EASTER_MONDAY', 'CHRISTMAS', 'BOXING_DAY', 'THANKSGIVING_SUNDAY', 'CHURCH_ANNIVERSARY', 'HARVEST_FESTIVAL', 'CUSTOM');
-
 -- CreateTable
 CREATE TABLE `event_contributions` (
   `id` VARCHAR(191) NOT NULL,
@@ -37,13 +28,3 @@ CREATE TABLE `event_contributions` (
 
 -- AddForeignKey
 ALTER TABLE `event_contributions` ADD CONSTRAINT `event_contributions_recordedBy_fkey` FOREIGN KEY (`recordedBy`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
--- CreateIndex
-CREATE INDEX "event_contributions_eventType_idx" ON "event_contributions"("eventType");
-
--- CreateIndex
-CREATE INDEX "event_contributions_contributionType_idx" ON "event_contributions"("contributionType");
-
--- AddForeignKey
-ALTER TABLE "event_contributions"
-  ADD CONSTRAINT "event_contributions_recordedBy_fkey"
-  FOREIGN KEY ("recordedBy") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
