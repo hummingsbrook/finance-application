@@ -1,5 +1,5 @@
 const prisma = require('../../lib/prisma');
-const { roundAmount } = require('../../lib/money');
+const { roundMoney: roundAmount } = require('../../lib/money');
 const { parsePagination } = require('../../lib/pagination');
 
 // Preset event names and their standard dates (month is 1-based)
