@@ -5,7 +5,7 @@ import { formatKES, formatDate } from '../../lib/utils';
 import UniversalTable from '../../components/ui/UniversalTable';
 import ReactECharts from 'echarts-for-react';
 import {
-  CHURCH_EVENT_TYPES, MONEY_PURPOSES, PROGRAMME_ROLES,
+  CHURCH_EVENT_TYPES, PROGRAMME_ROLES,
   IN_KIND_CATEGORIES, CONTRIBUTION_TYPE_BADGE, PAYMENT_METHOD_BADGE,
 } from '../../constants/eventConstants';
 
@@ -53,7 +53,6 @@ export default function Events() {
   const [form, setForm] = useState({
     contributorName: '',
     contributionType: 'MONEY',
-    purpose: '',
     amount: '',
     paymentMethod: 'CASH',
     mpesaReceiptNo: '',
@@ -197,7 +196,6 @@ export default function Events() {
     if (!form.eventDate) errors.eventDate = 'Event date is required.';
 
     if (form.contributionType === 'MONEY') {
-      if (!form.purpose) errors.purpose = 'Please select a purpose.';
       const amt = parseFloat(form.amount);
       if (!form.amount || isNaN(amt) || amt <= 0) errors.amount = 'Enter a valid amount greater than 0.';
       if (form.paymentMethod === 'MPESA' && !form.mpesaReceiptNo.trim()) {
@@ -222,7 +220,6 @@ export default function Events() {
     setForm({
       contributorName: '',
       contributionType: 'MONEY',
-      purpose: '',
       amount: '',
       paymentMethod: 'CASH',
       mpesaReceiptNo: '',
@@ -253,7 +250,6 @@ export default function Events() {
       await api.post('/events', {
         contributorName: form.contributorName,
         contributionType: form.contributionType,
-        purpose: form.contributionType === 'MONEY' ? form.purpose : null,
         amount: form.contributionType === 'MONEY' ? parseFloat(form.amount) : null,
         paymentMethod: form.contributionType === 'MONEY' ? form.paymentMethod : null,
         mpesaReceiptNo: form.contributionType === 'MONEY' ? form.mpesaReceiptNo || null : null,
@@ -395,24 +391,6 @@ export default function Events() {
           {form.contributionType === 'MONEY' && (
             <div className="space-y-4 p-4 bg-secondary-container/10 rounded-lg border border-secondary/20">
               <p className="text-label-md font-bold text-secondary uppercase tracking-wider">Money Contribution Details</p>
-
-              {/* Purpose */}
-              <div>
-                <label className="text-label-md text-on-surface-variant">Purpose</label>
-                <div className="relative mt-1.5">
-                  <select
-                    name="purpose"
-                    value={form.purpose}
-                    onChange={handleChange}
-                    className={`w-full px-4 py-2.5 bg-surface-container-lowest border rounded-lg text-body-lg text-on-surface outline-none transition-colors appearance-none ${fieldErrors.purpose ? 'border-error' : 'border-outline-variant focus:border-secondary focus:ring-1 focus:ring-secondary'}`}
-                  >
-                    <option value="">Select purpose</option>
-                    {MONEY_PURPOSES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                  </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant" style={{ fontSize: 20 }}>expand_more</span>
-                </div>
-                {fieldErrors.purpose && <p className="text-label-sm text-error mt-1">{fieldErrors.purpose}</p>}
-              </div>
 
               {/* Amount + Payment method */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1212,7 +1190,6 @@ function EditEventModal({ item, onClose, onSuccess }) {
   const [editForm, setEditForm] = useState({
     contributorName: item.contributorName || '',
     contributionType: item.contributionType || 'MONEY',
-    purpose: item.purpose || '',
     amount: item.amount ? String(item.amount) : '',
     paymentMethod: item.paymentMethod || 'CASH',
     mpesaReceiptNo: item.mpesaReceiptNo || '',
@@ -1274,7 +1251,6 @@ function EditEventModal({ item, onClose, onSuccess }) {
     if (!editForm.eventName.trim()) errs.eventName = 'Required.';
     if (!editForm.eventDate) errs.eventDate = 'Required.';
     if (editForm.contributionType === 'MONEY') {
-      if (!editForm.purpose) errs.purpose = 'Required.';
       const amt = parseFloat(editForm.amount);
       if (!editForm.amount || isNaN(amt) || amt <= 0) errs.amount = 'Invalid amount.';
     } else {
@@ -1359,18 +1335,6 @@ function EditEventModal({ item, onClose, onSuccess }) {
           {/* Money fields */}
           {editForm.contributionType === 'MONEY' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-secondary-container/10 rounded-lg border border-secondary/20">
-              <div>
-                <label className="text-label-md text-on-surface-variant">Purpose</label>
-                <select
-                  name="purpose"
-                  value={editForm.purpose}
-                  onChange={handleChange}
-                  className={`mt-1.5 w-full px-4 py-2.5 bg-surface-container-lowest border rounded-lg text-body-lg text-on-surface outline-none appearance-none ${errors.purpose ? 'border-error' : 'border-outline-variant'}`}
-                >
-                  <option value="">Select purpose</option>
-                  {MONEY_PURPOSES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                </select>
-              </div>
               <div>
                 <label className="text-label-md text-on-surface-variant">Amount (KES)</label>
                 <input

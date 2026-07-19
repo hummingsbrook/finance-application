@@ -15,10 +15,6 @@ export const PRESET_EVENT_VALUES = CHURCH_EVENT_TYPES
   .filter((e) => e.value !== 'CUSTOM')
   .map((e) => e.value);
 
-export const MONEY_PURPOSES = [
-  { value: 'TITHE',    label: 'Tithe' },
-  { value: 'OFFERING', label: 'Offering' },
-];
 
 export const PROGRAMME_ROLES = [
   'Preacher',

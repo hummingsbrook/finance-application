@@ -57,11 +57,6 @@ enum InKindCategory {
   OTHERS
 }
 
-enum EventMoneyPurpose {
-  TITHE
-  OFFERING
-}
-
 enum ChurchEventType {
   NEW_YEAR
   GOOD_FRIDAY
@@ -253,7 +248,6 @@ model EventContribution {
   contributionType    EventContributionType
 
   // ── Money fields (null when contributionType = IN_KIND) ──────────
-  purpose             EventMoneyPurpose?       // TITHE or OFFERING
   amount              Decimal?                 @db.Decimal(12, 2)
   paymentMethod       PaymentMethod?
   mpesaReceiptNo      String?

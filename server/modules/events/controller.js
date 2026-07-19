@@ -35,8 +35,7 @@ async function getById(req, res) {
 async function create(req, res) {
   try {
     let {
-      contributorName, contributionType,
-      purpose, amount, paymentMethod, mpesaReceiptNo, bankName, accountNo, idNumber,
+      contributorName, contributionType, amount, paymentMethod, mpesaReceiptNo, bankName, accountNo, idNumber,
       inKindCategory, inKindDescription, inKindOtherType,
       eventType, eventName, eventDate,
       programmeTeam, notes,
@@ -67,7 +66,6 @@ async function create(req, res) {
 
     const contribution = await service.createEventContribution({
       contributorName, contributionType,
-      purpose: purpose || null,
       amount: amount || null,
       paymentMethod: paymentMethod || null,
       mpesaReceiptNo: mpesaReceiptNo || null,
