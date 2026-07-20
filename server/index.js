@@ -204,17 +204,19 @@ app.get('/api/csrf-token', (req, res) => {
   }
 });
 // ─── Production: Serve React Frontend ──────────────────────────────────────────
-if (isProduction) {
+if (process.env.SERVE_CLIENT === 'true') {
   const clientDistPath = path.join(__dirname, '..', 'client', 'dist');
   app.use(express.static(clientDistPath));
-
-  // Catch-all: serve index.html for any non-API route (SPA routing).
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
       res.sendFile(path.join(clientDistPath, 'index.html'));
     }
   });
 }
+
+app.get('/', (req,res)=>{
+  res.json({success:true,service:'ChurchFinance Pro API',status:'running',health:'/api/health'});
+});
 
 // ─── Global Error Handler ──────────────────────────────────────────────────────
 // FIXED: Forward the HTTP status code from http-errors (e.g. csrf-csrf throws
