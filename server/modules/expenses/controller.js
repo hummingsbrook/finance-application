@@ -151,4 +151,83 @@ async function reject(req, res) {
   }
 }
 
-module.exports = { list, summary, yearlySummary, create, oversight, approve, reject };
+async function update(req, res) {
+  try {
+    const existing = await service.getExpenseById(req.params.id);
+    if (!existing) {
+      return error(res, 'Expense not found.', 404, 'NOT_FOUND');
+    }
+
+    // Allow editing most fields; for security, ignore any attempt to flip
+    // approval-related fields directly (those go through /approve and /reject).
+    const {
+      description, amount, date, category, salaryType,
+      paymentMethod, recipientName, mpesaReceiptNo,
+      bankName, accountNo, idNumber, notes, status,
+    } = req.body;
+
+    const payload = {
+      description, amount, date, category, salaryType,
+      paymentMethod, recipientName, mpesaReceiptNo,
+      bankName, accountNo, idNumber, notes, status,
+    };
+
+    // Strip out undefined keys so updateExpense doesn't null them out.
+    Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
+
+    const expense = await service.updateExpense(req.params.id, payload);
+    return success(res, { expense });
+  } catch (err) {
+    console.error('[expenses.update] error:', err);
+    if (err.code === 'DUPLICATE_MPESA') {
+      return error(res, 'This M-Pesa receipt number has already been recorded.', 409, 'DUPLICATE_MPESA');
+    }
+    if (err.code === 'P2025') {
+      return error(res, 'Expense not found.', 404, 'NOT_FOUND');
+    }
+    return error(res, 'Failed to update expense.', 500, 'SERVER_ERROR');
+  }
+}
+
+async function remove(req, res) {
+  try {
+    const deleted = await service.deleteExpense(req.params.id);
+    return success(res, { expense: deleted });
+  } catch (err) {
+    console.error('[expenses.delete] error:', err);
+    if (err.code === 'P2025') {
+      return error(res, 'Expense not found.', 404, 'NOT_FOUND');
+    }
+    return error(res, 'Failed to delete expense.', 500, 'SERVER_ERROR');
+  }
+}
+
+async function checkDuplicate(req, res) {
+  try {
+    const { mpesaReceiptNo, excludeId } = req.query;
+    
+    if (!mpesaReceiptNo) {
+      return error(res, 'Provide mpesaReceiptNo to check.', 400, 'VALIDATION_ERROR');
+    }
+
+    const existing = await service.checkExpenseDuplicate({ 
+      mpesaReceiptNo,
+      excludeId: excludeId || null,
+    });
+
+    if (existing) {
+      return res.status(200).json({ 
+        duplicate: true, 
+        message: 'This M-Pesa receipt number already exists.',
+        existingId: existing.id,
+      });
+    }
+
+    return res.status(200).json({ duplicate: false });
+  } catch (err) {
+    console.error('[expenses.checkDuplicate] error:', err);
+    return error(res, 'Duplicate check failed.', 500, 'SERVER_ERROR');
+  }
+}
+
+module.exports = { list, summary, yearlySummary, create, oversight, approve, reject, update, remove, checkDuplicate };

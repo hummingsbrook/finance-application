@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Input from './Input';
+import useDuplicateCheck from '../../hooks/useDuplicateCheck';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -7,6 +8,7 @@ export default function TitheEditOverlay({ isOpen, tithe, onClose, onSave }) {
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  const { duplicateError, checkDuplicate, clearDuplicateError } = useDuplicateCheck('tithes');
 
   // Populate form whenever the overlay opens or the tithe changes
   useEffect(() => {
@@ -25,8 +27,9 @@ export default function TitheEditOverlay({ isOpen, tithe, onClose, onSave }) {
         status: tithe.status || 'CONFIRMED',
       });
       setErrors({});
+      clearDuplicateError();
     }
-  }, [isOpen, tithe]);
+  }, [isOpen, tithe, clearDuplicateError]);
 
   // Close on Escape key
   useEffect(() => {
@@ -89,17 +92,10 @@ export default function TitheEditOverlay({ isOpen, tithe, onClose, onSave }) {
     : '';
 
   return (
-    <>
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
       <div
-        className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Slide-in panel */}
-      <div
-        className="fixed top-0 right-0 h-full w-full sm:w-[520px] bg-surface z-50 flex flex-col shadow-2xl border-l border-outline-variant overflow-hidden"
+        className="relative bg-white w-full max-w-2xl max-h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-label="Edit Tithe Record"
@@ -209,8 +205,9 @@ export default function TitheEditOverlay({ isOpen, tithe, onClose, onSave }) {
               name="mpesaReceiptNo"
               value={form.mpesaReceiptNo}
               onChange={handleChange}
+              onBlur={() => checkDuplicate(form.mpesaReceiptNo, 'mpesaReceiptNo', tithe?.id)}
               placeholder="e.g. RJH8945KL3"
-              error={errors.mpesaReceiptNo}
+              error={errors.mpesaReceiptNo || (duplicateError && form.mpesaReceiptNo ? duplicateError : undefined)}
             />
           )}
 
@@ -234,10 +231,11 @@ export default function TitheEditOverlay({ isOpen, tithe, onClose, onSave }) {
                   name="chequeNumber"
                   value={form.chequeNumber}
                   onChange={handleChange}
+                  onBlur={() => checkDuplicate(form.chequeNumber, 'chequeNumber', tithe?.id)}
                   placeholder="e.g. 000123456"
                   icon="receipt"
                   required
-                  error={errors.chequeNumber}
+                  error={errors.chequeNumber || (duplicateError && form.chequeNumber ? duplicateError : undefined)}
                 />
               </div>
             </div>
@@ -315,6 +313,6 @@ export default function TitheEditOverlay({ isOpen, tithe, onClose, onSave }) {
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }

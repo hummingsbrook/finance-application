@@ -164,7 +164,7 @@ function ServiceCard({ service, onEdit, onToggleActive, onDelete }) {
                 className="text-on-surface-variant hover:bg-surface-container-high p-2 rounded-lg transition-colors"
                 title={service.isActive ? 'Deactivate' : 'Activate'}
               >
-                <span className="material-symbols-outlined" style={{fontSize:20}}>toggle_off</span>
+                <span className="material-symbols-outlined" style={{fontSize:20}}>{service.isActive ? 'toggle_on' : 'toggle_off'}</span>
               </button>
               <button
                 onClick={() => onDelete(service)}
@@ -189,6 +189,9 @@ export default function ChurchServices() {
   const [editingService, setEditingService] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  // Toggle confirmation target — drives a second ConfirmDialog before
+  // any activate/deactivate action is sent to the API.
+  const [toggleTarget, setToggleTarget] = useState(null);
 
   const [form, setForm] = useState({
     name: '', dayOfWeek: 'Sunday', time: '09:00',
@@ -318,15 +321,24 @@ export default function ChurchServices() {
       fetchServices();
     } catch (err) {
       showError(err?.response?.data?.message || 'Failed to delete service');
+      setDeleteTarget(null);
     }
   };
 
-  const handleToggleActive = async (service) => {
+  const handleToggleActive = (service) => {
+    // Open the confirmation dialog instead of firing the API call directly.
+    setToggleTarget(service);
+  };
+
+  const confirmToggle = async () => {
+    if (!toggleTarget) return;
     try {
-      await api.put(`/services/${service.id}`, { isActive: !service.isActive });
+      await api.put(`/services/${toggleTarget.id}`, { isActive: !toggleTarget.isActive });
       fetchServices();
     } catch (err) {
       showError(err?.response?.data?.message || 'Failed to update service');
+    } finally {
+      setToggleTarget(null);
     }
   };
 
@@ -732,7 +744,7 @@ export default function ChurchServices() {
         </div>
       </details>
 
-      {/* ── CONFIRM DIALOG ── */}
+      {/* ── CONFIRM DIALOG (delete) ── */}
       <ConfirmDialog
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
@@ -741,6 +753,17 @@ export default function ChurchServices() {
         message={`Delete "${deleteTarget?.name}"? This cannot be undone.`}
         confirmText="Delete"
         danger={true}
+      />
+
+      {/* ── CONFIRM DIALOG (toggle active/inactive) ── */}
+      <ConfirmDialog
+        isOpen={!!toggleTarget}
+        onClose={() => setToggleTarget(null)}
+        onConfirm={confirmToggle}
+        title={toggleTarget?.isActive ? 'Deactivate Service' : 'Activate Service'}
+        message={`Are you sure you want to ${toggleTarget?.isActive ? 'deactivate' : 'activate'} "${toggleTarget?.name}"?`}
+        confirmText={toggleTarget?.isActive ? 'Deactivate' : 'Activate'}
+        danger={false}
       />
     </div>
   );

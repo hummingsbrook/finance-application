@@ -19,23 +19,40 @@ function randAmount(min, max) {
   return Math.round((min + Math.random() * (max - min)) * 100) / 100;
 }
 
-function randDate(year, month) {
-  // month is 0-indexed
+function randDate(year, month, maxDay = null) {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  return new Date(year, month, randInt(1, daysInMonth));
+  const limit = maxDay ? Math.min(maxDay, daysInMonth) : daysInMonth;
+  return new Date(year, month, randInt(1, limit));
+}
+
+// For 2026 July cap at the 19th
+function safeDate(year, month) {
+  if (year === 2026 && month === 6) return randDate(year, month, 19);
+  return randDate(year, month);
 }
 
 function randMpesa() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
-  return Array.from({ length: 10 }, () => randItem(chars.split(''))).join('');
+  return Array.from({ length: 10 }, () => chars[randInt(0, chars.length - 1)]).join('');
 }
 
-function randPhone() {
-  const prefixes = ['0700', '0711', '0722', '0733', '0740', '0755', '0768', '0790'];
-  return randItem(prefixes) + randInt(100000, 999999).toString();
+const usedMpesa = new Set();
+function uniqueMpesa() {
+  let code;
+  do { code = randMpesa(); } while (usedMpesa.has(code));
+  usedMpesa.add(code);
+  return code;
 }
 
-// ─── Data pools ─────────────────────────────────────────────────────────────
+const usedCheques = new Set();
+function uniqueCheque() {
+  let code;
+  do { code = `CHQ${randInt(100000, 999999)}`; } while (usedCheques.has(code));
+  usedCheques.add(code);
+  return code;
+}
+
+// ─── Data Pools ──────────────────────────────────────────────────────────────
 
 const CONTRIBUTOR_NAMES = [
   'John Mwangi Kibaki', 'Grace Wambui Njeri', 'Elder Samuel Omondi',
@@ -54,11 +71,9 @@ const CONTRIBUTOR_NAMES = [
   'Andrew Maina Muchangi',
 ];
 
-const SERVICE_TYPES = [
-  'Sunday Main Service', 'Sunday Second Service', 'Sunday School',
-  'Wednesday Bible Study', 'Friday Prayer Meeting', 'Youth Service',
-  'Ladies Fellowship', 'Men Fellowship',
-];
+const SERVICE_TYPES = ['Sunday Main', 'Sunday School'];
+
+const SALARY_TYPES = ['PASTOR', 'CARETAKER', 'SECURITY_OFFICER'];
 
 const SERMON_TOPICS = [
   'Walking in the Spirit', 'Faith That Moves Mountains', 'The Power of Worship',
@@ -81,6 +96,12 @@ const PROGRAMMERS = [
   'Mercy Njeri', 'Grace Wambui', 'Faith Muthoni', 'Lydia Chebet',
   'Agnes Nyambura', 'Priscilla Auma', 'Catherine Njoki',
 ];
+
+const LEAD_MINISTRANTS = [
+  'Elder Peter Kingorá', 'Deacon Moses Otieno', 'Elder Ruth Achieng',
+];
+
+const READERS = ['Alice Wangui', 'Lilian M.', 'Samuel Maina', 'Naomi Wanjiru'];
 
 const EXPENSE_DESCRIPTIONS = {
   SALARIES: [
@@ -117,22 +138,62 @@ const EXPENSE_DESCRIPTIONS = {
   ],
 };
 
+const SALARY_TYPE_MAP = {
+  'Pastor Monthly Salary':     'PASTOR',
+  'Worship Leader Honorarium': 'PASTOR',
+  'Church Secretary Salary':   'CARETAKER',
+  'Cleaner Monthly Pay':       'CARETAKER',
+  'Security Guard Salary':     'SECURITY_OFFICER',
+  'Accountant Stipend':        'CARETAKER',
+};
+
 const RECIPIENT_NAMES = {
-  SALARIES: ['Rev. James Kariuki', 'Mrs. Faith Muthoni', 'Mr. Kamau Njoroge', 'Mr. John Otieno'],
-  UTILITIES: ['Kenya Power & Lighting', 'Nairobi City Water', 'Safaricom Ltd', 'Shell Petrol Station'],
-  MAINTENANCE: ['Benson Hardware', 'TechSound Kenya', 'Plumbing Masters', 'Paintmaster Contractors'],
-  EVENTS: ['Venue Hire — KICC', 'Mama Njeri Catering', 'M&M Events', 'Excel Printers'],
-  TRANSPORT: ['Matatu Saccos', 'Petrol Station', 'Deluxe Coaches Ltd', 'Driver John Otieno'],
-  SUPPLIES: ['Bible Society of Kenya', 'Excel Stationers', 'Church Supplies Kenya', 'Local Market'],
+  SALARIES:      ['Rev. James Kariuki', 'Mrs. Faith Muthoni', 'Mr. Kamau Njoroge', 'Mr. John Otieno'],
+  UTILITIES:     ['Kenya Power & Lighting', 'Nairobi City Water', 'Safaricom Ltd', 'Shell Petrol Station'],
+  MAINTENANCE:   ['Benson Hardware', 'TechSound Kenya', 'Plumbing Masters', 'Paintmaster Contractors'],
+  EVENTS:        ['Venue Hire — KICC', 'Mama Njeri Catering', 'M&M Events', 'Excel Printers'],
+  TRANSPORT:     ['Matatu Saccos', 'Petrol Station', 'Deluxe Coaches Ltd', 'Driver John Otieno'],
+  SUPPLIES:      ['Bible Society of Kenya', 'Excel Stationers', 'Church Supplies Kenya', 'Local Market'],
   MISCELLANEOUS: ['Registrar of Societies', 'Kenyatta Hospital', 'Advocate M. Mwangi', 'Insurance Co.'],
 };
+
+// Church events — only up to month 6 (July) for 2026
+const CHURCH_EVENTS = [
+  { eventType: 'NEW_YEAR',            eventName: "New Year's Day",       month: 0  },
+  { eventType: 'GOOD_FRIDAY',         eventName: 'Good Friday',          month: 3  },
+  { eventType: 'EASTER_SUNDAY',       eventName: 'Easter Sunday',        month: 3  },
+  { eventType: 'HARVEST_FESTIVAL',    eventName: 'Harvest Festival',     month: 9  },
+  { eventType: 'CHURCH_ANNIVERSARY',  eventName: 'Church Anniversary',   month: 6  },
+  { eventType: 'THANKSGIVING_SUNDAY', eventName: 'Thanksgiving Sunday',  month: 10 },
+  { eventType: 'CHRISTMAS',           eventName: 'Christmas Day',        month: 11 },
+  { eventType: 'BOXING_DAY',          eventName: 'Boxing Day',           month: 11 },
+];
+
+const IN_KIND_CATEGORIES = ['FOOD', 'CLOTHES', 'SUPPLIES', 'OTHERS'];
+const IN_KIND_DESCRIPTIONS = {
+  FOOD:     ['20kg Maize Flour', '10 litres Cooking Oil', '50kg Rice', 'Assorted Food Hamper', '30 loaves of Bread'],
+  CLOTHES:  ['10 Warm Jackets', '20 School Uniforms', '30 Pairs of Shoes', 'Assorted Clothing Bundle'],
+  SUPPLIES: ['Box of Bibles', '10 Hymn Books', 'Stationery Bundle', 'Cleaning Supplies Pack'],
+  OTHERS:   ['Plastic Chairs (5)', 'Portable Generator', 'Water Purifier', 'Garden Tools Set'],
+};
+
+// ─── Seed year/month ranges ──────────────────────────────────────────────────
+// 2024: Jan–Dec (months 0–11)
+// 2025: Jan–Dec (months 0–11)
+// 2026: Jan–Jul 19 (months 0–6, day capped at 19 for month 6)
+
+function getMonthRange(yr) {
+  if (yr === 2026) return 7; // months 0–6 (Jan–Jul)
+  return 12;
+}
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('🌱 Seeding ChurchFinance Pro — 2024 to 2026...\n');
+  console.log('🌱 Seeding ChurchFinance Pro — 2024 to 19 July 2026...\n');
 
-  // ── Users ────────────────────────────────────────────────────────────────
+  // ── Users ─────────────────────────────────────────────────────────────────
+  // Only MANAGER and SUPER_ADMIN roles exist in the schema
   const users = await Promise.all([
     prisma.user.upsert({
       where: { email: 'admin@churchfinance.pro' },
@@ -159,129 +220,102 @@ async function main() {
       update: {},
       create: {
         email: 'elder@churchfinance.pro',
-        passwordHash: hash('Partner@123'),
+        passwordHash: hash('Manager@123'),
         firstName: 'Elder', lastName: 'Samuel',
-        role: 'PARTNER', phone: '+254711000001', isActive: true,
-      },
-    }),
-    prisma.user.upsert({
-      where: { email: 'grace@churchfinance.pro' },
-      update: {},
-      create: {
-        email: 'grace@churchfinance.pro',
-        passwordHash: hash('Partner@123'),
-        firstName: 'Grace', lastName: 'Wambui',
-        role: 'PARTNER', phone: '+254711000002', isActive: true,
-      },
-    }),
-    prisma.user.upsert({
-      where: { email: 'john@churchfinance.pro' },
-      update: {},
-      create: {
-        email: 'john@churchfinance.pro',
-        passwordHash: hash('Partner@123'),
-        firstName: 'John', lastName: 'Kibaki',
-        role: 'PARTNER', phone: '+254711000003', isActive: true,
-      },
-    }),
-    prisma.user.upsert({
-      where: { email: 'faith@churchfinance.pro' },
-      update: {},
-      create: {
-        email: 'faith@churchfinance.pro',
-        passwordHash: hash('Partner@123'),
-        firstName: 'Faith', lastName: 'Muthoni',
-        role: 'PARTNER', phone: '+254722000001', isActive: true,
-      },
-    }),
-    prisma.user.upsert({
-      where: { email: 'peter@churchfinance.pro' },
-      update: {},
-      create: {
-        email: 'peter@churchfinance.pro',
-        passwordHash: hash('Partner@123'),
-        firstName: 'Peter', lastName: 'Ochieng',
-        role: 'PARTNER', phone: '+254733000001', isActive: true,
+        role: 'MANAGER', phone: '+254711000001', isActive: true,
       },
     }),
   ]);
 
   const admin   = users[0];
   const manager = users[1];
-  const partners = users.slice(2);
+  const elder   = users[2];
   console.log(`✅ ${users.length} users`);
 
-  // ── Church Services ──────────────────────────────────────────────────────
-  // ~8–10 per year spread across Sundays + midweek
-  const serviceRows = [];
   const years = [2024, 2025, 2026];
 
+  // ── Church Services ───────────────────────────────────────────────────────
+  const serviceRows = [];
+
   years.forEach((yr) => {
-    const isPast = yr < 2026;
-    // ~4 services per quarter = 16 per year; we do 8 main Sundays + 4 midweek per year
-    for (let month = 0; month < 12; month++) {
-      if (yr === 2026 && month > 6) break; // only seed up to mid-2026
-      // 1 Sunday service per month
-      const sundayDate = new Date(yr, month, randInt(1, 14) % 7 === 0 ? randInt(1, 7) : randInt(1, 28));
-      // snap to nearest Sunday
-      const dayOffset = (7 - sundayDate.getDay()) % 7;
-      sundayDate.setDate(sundayDate.getDate() + dayOffset);
+    const monthsToSeed = getMonthRange(yr);
 
-      const status = isPast ? 'COMPLETED' : (month < 6 ? 'COMPLETED' : randItem(['SCHEDULED', 'INCOMPLETE']));
+    for (let month = 0; month < monthsToSeed; month++) {
+      // Cap July 2026 day at 19
+      const maxDay = (yr === 2026 && month === 6) ? 19 : null;
+      const daysInMonth = new Date(yr, month + 1, 0).getDate();
+      const dayLimit = maxDay ? Math.min(maxDay, daysInMonth) : daysInMonth;
 
-      serviceRows.push({
-        id: `svc-${yr}-${month}-sun`,
-        name: 'Sunday Worship Service',
-        dayOfWeek: 'Sunday',
-        time: randItem(['09:00', '10:00']),
-        serviceDate: sundayDate,
-        topic: status !== 'INCOMPLETE' ? randItem(SERMON_TOPICS) : null,
-        speaker: status !== 'INCOMPLETE' ? randItem(SPEAKERS) : null,
-        programmer: status === 'COMPLETED' ? randItem(PROGRAMMERS) : null,
-        leadMinistrant: status === 'COMPLETED' ? randItem(['Elder Peter Kingorá', 'Deacon Moses Otieno', 'Elder Ruth Achieng']) : null,
-        reader: status === 'COMPLETED' ? randItem(['Alice Wangui', 'Lilian M.', 'Samuel Maina', 'Naomi Wanjiru']) : null,
-        notes: null,
-        status,
-        isActive: true,
-      });
+      // Find first Sunday of the month
+      const firstDay = new Date(yr, month, 1);
+      const firstSunday = new Date(yr, month, 1 + ((7 - firstDay.getDay()) % 7));
+      const sundayDay = firstSunday.getDate();
 
-      // 1 midweek per month (alternating Wednesday Bible Study / Friday Prayer)
+      if (sundayDay > dayLimit) {
+        // No Sunday fits within day limit, skip
+      } else {
+        const isPast = yr < 2026 || (yr === 2026 && month < 6);
+        const status = isPast ? 'COMPLETED' : randItem(['SCHEDULED', 'INCOMPLETE']);
+
+        serviceRows.push({
+          id: `svc-${yr}-${month}-sun`,
+          name: 'Sunday Worship Service',
+          dayOfWeek: 'Sunday',
+          time: randItem(['09:00', '10:00']),
+          serviceDate: new Date(yr, month, sundayDay),
+          topic: status !== 'INCOMPLETE' ? randItem(SERMON_TOPICS) : null,
+          speaker: status !== 'INCOMPLETE' ? randItem(SPEAKERS) : null,
+          programmer: status === 'COMPLETED' ? randItem(PROGRAMMERS) : null,
+          leadMinistrant: status === 'COMPLETED' ? randItem(LEAD_MINISTRANTS) : null,
+          reader: status === 'COMPLETED' ? randItem(READERS) : null,
+          notes: null,
+          status,
+          isActive: true,
+          createdBy: manager.id,
+        });
+      }
+
+      // Midweek services — every other month
       if (month % 2 === 0) {
-        const midDate = new Date(yr, month, randInt(8, 25));
+        const midDay = randInt(8, Math.min(25, dayLimit));
         serviceRows.push({
           id: `svc-${yr}-${month}-mid`,
           name: randItem(['Wednesday Bible Study', 'Friday Prayer Meeting']),
           dayOfWeek: randItem(['Wednesday', 'Friday']),
           time: '18:30',
-          serviceDate: midDate,
-          topic: isPast ? randItem(SERMON_TOPICS) : null,
-          speaker: isPast ? randItem(SPEAKERS) : null,
+          serviceDate: new Date(yr, month, midDay),
+          topic: (yr < 2026 || month < 6) ? randItem(SERMON_TOPICS) : null,
+          speaker: (yr < 2026 || month < 6) ? randItem(SPEAKERS) : null,
           programmer: null,
           leadMinistrant: null,
           reader: null,
           notes: null,
-          status: isPast ? 'COMPLETED' : 'SCHEDULED',
+          status: (yr < 2026 || month < 6) ? 'COMPLETED' : 'SCHEDULED',
           isActive: true,
+          createdBy: elder.id,
         });
       }
     }
   });
 
   for (const svc of serviceRows) {
-    await prisma.churchService.upsert({ where: { id: svc.id }, update: {}, create: svc });
+    await prisma.churchService.upsert({
+      where: { id: svc.id },
+      update: {},
+      create: svc,
+    });
   }
   console.log(`✅ ${serviceRows.length} church services`);
 
-  // ── Tithes — ~190 per year ───────────────────────────────────────────────
+  // ── Tithes ────────────────────────────────────────────────────────────────
   const titheRows = [];
 
   years.forEach((yr) => {
-    const monthsToSeed = yr === 2026 ? 7 : 12; // Jan–Jul 2026
-    let count = 0;
-    const target = yr === 2026 ? Math.round(190 * (7 / 12)) : 190;
+    const monthsToSeed = getMonthRange(yr);
+    const annualTarget = yr === 2026 ? Math.round(190 * (7 / 12)) : 190;
 
     for (let month = 0; month < monthsToSeed; month++) {
-      const perMonth = Math.round(target / monthsToSeed) + randInt(-2, 2);
+      const perMonth = Math.round(annualTarget / monthsToSeed) + randInt(-2, 2);
       for (let i = 0; i < perMonth; i++) {
         const usesMpesa = Math.random() > 0.35;
         const usesBankTransfer = !usesMpesa && Math.random() > 0.7;
@@ -289,17 +323,16 @@ async function main() {
           id: `tithe-${yr}-${month}-${i}`,
           contributorName: randItem(CONTRIBUTOR_NAMES),
           amount: randAmount(2000, 30000),
-          date: randDate(yr, month),
+          date: safeDate(yr, month),
           paymentMethod: usesMpesa ? 'MPESA' : usesBankTransfer ? 'BANK_TRANSFER' : 'CASH',
-          mpesaReceiptNo: usesMpesa ? randMpesa() : null,
+          mpesaReceiptNo: usesMpesa ? uniqueMpesa() : null,
           bankName: usesBankTransfer ? randItem(['Equity Bank', 'KCB', 'Co-operative Bank', 'NCBA']) : null,
-          chequeNumber: usesBankTransfer ? `CHQ${randInt(100000, 999999)}` : null,
+          chequeNumber: usesBankTransfer ? uniqueCheque() : null,
           idNumber: Math.random() > 0.6 ? `${randInt(10000000, 39999999)}` : null,
           notes: Math.random() > 0.85 ? 'Thanksgiving tithe' : null,
           status: Math.random() > 0.05 ? 'CONFIRMED' : 'PENDING',
           recordedBy: manager.id,
         });
-        count++;
       }
     }
   });
@@ -307,25 +340,25 @@ async function main() {
   await prisma.tithe.createMany({ data: titheRows, skipDuplicates: true });
   console.log(`✅ ${titheRows.length} tithe records`);
 
-  // ── Offerings — ~190 per year ────────────────────────────────────────────
+  // ── Offerings ─────────────────────────────────────────────────────────────
   const offeringRows = [];
 
   years.forEach((yr) => {
-    const monthsToSeed = yr === 2026 ? 7 : 12;
-    const target = yr === 2026 ? Math.round(190 * (7 / 12)) : 190;
+    const monthsToSeed = getMonthRange(yr);
+    const annualTarget = yr === 2026 ? Math.round(190 * (7 / 12)) : 190;
 
     for (let month = 0; month < monthsToSeed; month++) {
-      const perMonth = Math.round(target / monthsToSeed) + randInt(-2, 2);
+      const perMonth = Math.round(annualTarget / monthsToSeed) + randInt(-2, 2);
       for (let i = 0; i < perMonth; i++) {
         const usesMpesa = Math.random() > 0.45;
         offeringRows.push({
           id: `offering-${yr}-${month}-${i}`,
           contributorName: randItem(CONTRIBUTOR_NAMES),
           amount: randAmount(500, 15000),
-          date: randDate(yr, month),
+          date: safeDate(yr, month),
           serviceType: randItem(SERVICE_TYPES),
           paymentMethod: usesMpesa ? 'MPESA' : 'CASH',
-          mpesaReceiptNo: usesMpesa ? randMpesa() : null,
+          mpesaReceiptNo: usesMpesa ? uniqueMpesa() : null,
           bankName: null,
           chequeNumber: null,
           idNumber: Math.random() > 0.7 ? `${randInt(10000000, 39999999)}` : null,
@@ -340,23 +373,23 @@ async function main() {
   await prisma.offering.createMany({ data: offeringRows, skipDuplicates: true });
   console.log(`✅ ${offeringRows.length} offering records`);
 
-  // ── Expenses — ~190 per year ─────────────────────────────────────────────
+  // ── Expenses ──────────────────────────────────────────────────────────────
   const categories = ['SALARIES', 'UTILITIES', 'MAINTENANCE', 'EVENTS', 'TRANSPORT', 'SUPPLIES', 'MISCELLANEOUS'];
   const expenseRows = [];
 
   years.forEach((yr) => {
-    const monthsToSeed = yr === 2026 ? 7 : 12;
-    const target = yr === 2026 ? Math.round(190 * (7 / 12)) : 190;
+    const monthsToSeed = getMonthRange(yr);
+    const annualTarget = yr === 2026 ? Math.round(190 * (7 / 12)) : 190;
 
     for (let month = 0; month < monthsToSeed; month++) {
-      const perMonth = Math.round(target / monthsToSeed) + randInt(-1, 2);
+      const perMonth = Math.round(annualTarget / monthsToSeed) + randInt(-1, 2);
       for (let i = 0; i < perMonth; i++) {
         const cat = randItem(categories);
-        const descs = EXPENSE_DESCRIPTIONS[cat];
-        const desc = randItem(descs);
+        const desc = randItem(EXPENSE_DESCRIPTIONS[cat]);
         const usesMpesa = Math.random() > 0.4;
         const isSalary = cat === 'SALARIES';
         const isPending = Math.random() > 0.9;
+        const salaryType = isSalary ? (SALARY_TYPE_MAP[desc] || randItem(SALARY_TYPES)) : null;
 
         expenseRows.push({
           id: `expense-${yr}-${month}-${i}`,
@@ -366,18 +399,18 @@ async function main() {
             : cat === 'EVENTS'
               ? randAmount(15000, 150000)
               : randAmount(1500, 40000),
-          date: randDate(yr, month),
+          date: safeDate(yr, month),
           category: cat,
+          salaryType,
           paymentMethod: usesMpesa ? 'MPESA' : randItem(['CASH', 'BANK_TRANSFER']),
           recipientName: randItem(RECIPIENT_NAMES[cat]),
-          mpesaReceiptNo: usesMpesa ? randMpesa() : null,
+          mpesaReceiptNo: usesMpesa ? uniqueMpesa() : null,
           bankName: !usesMpesa && Math.random() > 0.5 ? randItem(['Equity Bank', 'KCB', 'Co-op Bank']) : null,
           accountNo: !usesMpesa && Math.random() > 0.6 ? `${randInt(1000000000, 9999999999)}` : null,
           idNumber: Math.random() > 0.7 ? `${randInt(10000000, 39999999)}` : null,
           notes: Math.random() > 0.85 ? randItem(['Approved in AGM', 'Emergency expenditure', 'Recurring monthly']) : null,
           status: isPending ? 'PENDING' : 'CONFIRMED',
           recordedBy: manager.id,
-          approvedBy: !isPending ? admin.id : null,
         });
       }
     }
@@ -386,7 +419,7 @@ async function main() {
   await prisma.expense.createMany({ data: expenseRows, skipDuplicates: true });
   console.log(`✅ ${expenseRows.length} expense records`);
 
-  // ── Harambees ────────────────────────────────────────────────────────────
+  // ── Harambees ─────────────────────────────────────────────────────────────
   const harambees = await Promise.all([
     prisma.harambee.upsert({
       where: { id: 'harambee-1' },
@@ -397,8 +430,7 @@ async function main() {
         description: 'Roof installation and interior finishing for the new sanctuary building.',
         targetAmount: 5000000,
         currentAmount: 3850000,
-        startDate: new Date('2024-01-15'),
-        endDate: new Date('2025-06-30'),
+        deadline: new Date('2025-06-30'),
         status: 'COMPLETED',
         createdBy: manager.id,
       },
@@ -412,8 +444,7 @@ async function main() {
         description: 'Building a dedicated youth centre for our growing youth ministry.',
         targetAmount: 2000000,
         currentAmount: 1420000,
-        startDate: new Date('2024-06-01'),
-        endDate: new Date('2025-12-31'),
+        deadline: new Date('2025-12-31'),
         status: 'ACTIVE',
         createdBy: manager.id,
       },
@@ -423,12 +454,11 @@ async function main() {
       update: {},
       create: {
         id: 'harambee-3',
-        title: 'Pastor\'s Housing Project',
+        title: "Pastor's Housing Project",
         description: 'Purchase and renovation of a residence for the lead pastor.',
         targetAmount: 3500000,
         currentAmount: 980000,
-        startDate: new Date('2025-03-01'),
-        endDate: new Date('2026-03-01'),
+        deadline: new Date('2026-03-01'),
         status: 'ACTIVE',
         createdBy: manager.id,
       },
@@ -442,8 +472,7 @@ async function main() {
         description: 'Buying a 14-seater van for church transport and outreach ministry.',
         targetAmount: 1800000,
         currentAmount: 1800000,
-        startDate: new Date('2025-07-01'),
-        endDate: new Date('2025-12-31'),
+        deadline: new Date('2025-12-31'),
         status: 'COMPLETED',
         createdBy: manager.id,
       },
@@ -457,39 +486,42 @@ async function main() {
         description: 'Professional sound system, screens, and cameras for live streaming.',
         targetAmount: 1200000,
         currentAmount: 450000,
-        startDate: new Date('2026-01-01'),
-        endDate: new Date('2026-12-31'),
+        deadline: new Date('2026-12-31'),
         status: 'ACTIVE',
-        createdBy: manager.id,
+        createdBy: elder.id,
       },
     }),
   ]);
   console.log(`✅ ${harambees.length} harambees`);
 
-  // ── Harambee Contributions — spread across years ──────────────────────────
+  // ── Harambee Contributions ────────────────────────────────────────────────
   const contribRows = [];
   const harambeeContribDistrib = [
-    { h: harambees[0], yr: 2024, months: 12, perMonth: 7 },  // 2024 completed
-    { h: harambees[0], yr: 2025, months: 6,  perMonth: 5 },  // partial 2025
+    { h: harambees[0], yr: 2024, months: 12, perMonth: 7 },
+    { h: harambees[0], yr: 2025, months: 6,  perMonth: 5 },
     { h: harambees[1], yr: 2024, months: 7,  perMonth: 4 },
     { h: harambees[1], yr: 2025, months: 12, perMonth: 6 },
     { h: harambees[2], yr: 2025, months: 10, perMonth: 4 },
     { h: harambees[2], yr: 2026, months: 7,  perMonth: 3 },
-    { h: harambees[3], yr: 2025, months: 6,  perMonth: 8 },  // fully funded
+    { h: harambees[3], yr: 2025, months: 6,  perMonth: 8 },
     { h: harambees[4], yr: 2026, months: 7,  perMonth: 4 },
   ];
 
-  harambeeContribDistrib.forEach(({ h, yr, months, perMonth }, distIdx) => {
+  harambeeContribDistrib.forEach(({ h, yr, months, perMonth }) => {
     for (let month = 0; month < months; month++) {
-      for (let i = 0; i < perMonth + randInt(-1, 1); i++) {
+      const count = perMonth + randInt(-1, 1);
+      for (let i = 0; i < count; i++) {
         const usesMpesa = Math.random() > 0.3;
+        const usesBankTransfer = !usesMpesa && Math.random() > 0.5;
         contribRows.push({
           harambeeId: h.id,
           contributorName: randItem(CONTRIBUTOR_NAMES),
           amount: randAmount(5000, 80000),
-          date: randDate(yr, month),
-          paymentMethod: usesMpesa ? 'MPESA' : randItem(['CASH', 'BANK_TRANSFER']),
-          mpesaReceiptNo: usesMpesa ? randMpesa() : null,
+          date: safeDate(yr, month),
+          paymentMethod: usesMpesa ? 'MPESA' : usesBankTransfer ? 'BANK_TRANSFER' : 'CASH',
+          mpesaReceiptNo: usesMpesa ? uniqueMpesa() : null,
+          bankName: usesBankTransfer ? randItem(['Equity Bank', 'KCB', 'Co-op Bank', 'NCBA']) : null,
+          chequeNumber: usesBankTransfer ? uniqueCheque() : null,
           notes: Math.random() > 0.8 ? 'Pledge fulfilment' : null,
           recordedBy: manager.id,
         });
@@ -500,64 +532,94 @@ async function main() {
   await prisma.harambeeContribution.createMany({ data: contribRows, skipDuplicates: true });
   console.log(`✅ ${contribRows.length} harambee contributions`);
 
-  // ── Partner Payments — spread across years ────────────────────────────────
-  const paymentRows = [];
-  const payTypes = ['TITHE', 'OFFERING', 'HARAMBEE'];
-  const harambeeIds = ['harambee-1', 'harambee-2', 'harambee-3', 'harambee-4', 'harambee-5'];
+  // ── Event Contributions ───────────────────────────────────────────────────
+  const eventRows = [];
 
   years.forEach((yr) => {
-    const monthsToSeed = yr === 2026 ? 7 : 12;
-    for (let month = 0; month < monthsToSeed; month++) {
-      partners.forEach((partner, pIdx) => {
-        // Each partner makes 1–3 payments per month
-        const numPayments = randInt(1, 3);
-        for (let i = 0; i < numPayments; i++) {
-          const type = randItem(payTypes);
-          const status = Math.random() > 0.1
-            ? 'CONFIRMED'
-            : Math.random() > 0.5 ? 'PENDING' : 'REJECTED';
-          const usesMpesa = Math.random() > 0.25;
+    const monthsToSeed = getMonthRange(yr);
 
-          paymentRows.push({
-            userId: partner.id,
-            amount: randAmount(2000, 50000),
-            paymentType: type,
-            harambeeId: type === 'HARAMBEE' ? randItem(harambeeIds) : null,
-            paymentMethod: usesMpesa ? 'MPESA' : randItem(['CASH', 'BANK_TRANSFER']),
-            mpesaReceiptNo: usesMpesa && status === 'CONFIRMED' ? randMpesa() : null,
-            phoneNumber: usesMpesa ? partner.phone : null,
-            status,
-            rejectionReason: status === 'REJECTED'
-              ? randItem([
-                  'Receipt number does not match any M-Pesa transaction.',
-                  'Amount does not match the stated payment.',
-                  'Duplicate submission detected.',
-                ])
-              : null,
-            confirmedBy: status === 'CONFIRMED' ? manager.id : null,
-            confirmedAt: status === 'CONFIRMED'
-              ? new Date(yr, month, randInt(1, 28), randInt(8, 17), randInt(0, 59))
-              : null,
-            createdAt: new Date(yr, month, randInt(1, 27)),
-            updatedAt: new Date(yr, month, randInt(1, 28)),
+    CHURCH_EVENTS.forEach((evt) => {
+      // Skip events whose month is beyond the seed range for this year
+      if (evt.month >= monthsToSeed) return;
+
+      // For July 2026 (month 6), cap event date at 19th
+      const maxDay = (yr === 2026 && evt.month === 6) ? 19 : null;
+      const daysInMonth = new Date(yr, evt.month + 1, 0).getDate();
+      const dayLimit = maxDay ? Math.min(maxDay, daysInMonth) : daysInMonth;
+      const eventDay = randInt(1, dayLimit);
+      const eventDate = new Date(yr, evt.month, eventDay);
+
+      const numContribs = randInt(8, 18);
+
+      for (let i = 0; i < numContribs; i++) {
+        const isMoneyContrib = Math.random() > 0.3;
+
+        if (isMoneyContrib) {
+          const usesMpesa = Math.random() > 0.35;
+          const usesBankTransfer = !usesMpesa && Math.random() > 0.6;
+          eventRows.push({
+            contributorName: randItem(CONTRIBUTOR_NAMES),
+            contributionType: 'MONEY',
+            amount: randAmount(1000, 20000),
+            paymentMethod: usesMpesa ? 'MPESA' : usesBankTransfer ? 'BANK_TRANSFER' : 'CASH',
+            mpesaReceiptNo: usesMpesa ? uniqueMpesa() : null,
+            bankName: usesBankTransfer ? randItem(['Equity Bank', 'KCB', 'Co-op Bank', 'NCBA']) : null,
+            accountNo: usesBankTransfer ? `${randInt(1000000000, 9999999999)}` : null,
+            idNumber: Math.random() > 0.6 ? `${randInt(10000000, 39999999)}` : null,
+            inKindCategory: null,
+            inKindDescription: null,
+            inKindOtherType: null,
+            eventType: evt.eventType,
+            eventName: evt.eventName,
+            eventDate,
+            programmeTeam: JSON.stringify([
+              { name: randItem(SPEAKERS), role: 'Preacher' },
+              { name: randItem(PROGRAMMERS), role: 'MC' },
+            ]),
+            notes: Math.random() > 0.85 ? 'Special event contribution' : null,
+            recordedBy: manager.id,
+          });
+        } else {
+          const cat = randItem(IN_KIND_CATEGORIES);
+          const desc = randItem(IN_KIND_DESCRIPTIONS[cat]);
+          eventRows.push({
+            contributorName: randItem(CONTRIBUTOR_NAMES),
+            contributionType: 'IN_KIND',
+            amount: null,
+            paymentMethod: null,
+            mpesaReceiptNo: null,
+            bankName: null,
+            accountNo: null,
+            idNumber: null,
+            inKindCategory: cat,
+            inKindDescription: desc,
+            inKindOtherType: cat === 'OTHERS' ? randItem(['Electronics', 'Furniture', 'Garden Tools']) : null,
+            eventType: evt.eventType,
+            eventName: evt.eventName,
+            eventDate,
+            programmeTeam: null,
+            notes: null,
+            recordedBy: manager.id,
           });
         }
-      });
-    }
+      }
+    });
   });
 
-  await prisma.payment.createMany({ data: paymentRows, skipDuplicates: true });
-  console.log(`✅ ${paymentRows.length} partner payments`);
+  await prisma.eventContribution.createMany({ data: eventRows, skipDuplicates: true });
+  console.log(`✅ ${eventRows.length} event contributions`);
 
   // ── Audit Logs ────────────────────────────────────────────────────────────
-  const modules = ['tithes', 'offerings', 'expenses', 'harambees', 'payments', 'users', 'AUTH'];
-  const actions = ['CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'LOGOUT', 'STATUS_CHANGE'];
+  const modules = ['tithes', 'offerings', 'expenses', 'harambees', 'events', 'users', 'AUTH'];
   const auditRows = [];
-  const allUsers = [admin, manager, ...partners];
+  const allUsers = [admin, manager, elder];
 
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < 150; i++) {
     const yr = randItem(years);
-    const month = yr === 2026 ? randInt(0, 6) : randInt(0, 11);
+    const maxMonth = yr === 2026 ? 6 : 11;
+    const month = randInt(0, maxMonth);
+    const maxDay = (yr === 2026 && month === 6) ? 19 : new Date(yr, month + 1, 0).getDate();
+    const day = randInt(1, maxDay);
     const user = randItem(allUsers);
     const module = randItem(modules);
     const action = module === 'AUTH'
@@ -575,7 +637,7 @@ async function main() {
           ? `${user.firstName} ${user.lastName} logged out`
           : `${action} on ${module} by ${user.firstName} ${user.lastName}`,
       ipAddress: `192.168.${randInt(1, 5)}.${randInt(50, 200)}`,
-      createdAt: new Date(yr, month, randInt(1, 28), randInt(6, 22), randInt(0, 59)),
+      createdAt: new Date(yr, month, day, randInt(6, 22), randInt(0, 59)),
     });
   }
 
@@ -583,30 +645,26 @@ async function main() {
   console.log(`✅ ${auditRows.length} audit log entries`);
 
   // ── Summary ───────────────────────────────────────────────────────────────
-  const totals = {
-    tithes: titheRows.length,
-    offerings: offeringRows.length,
-    expenses: expenseRows.length,
-  };
-  const grandTotal = totals.tithes + totals.offerings + totals.expenses;
-
   console.log(`
 🎉 Seed complete!
 
-📊 Records per category:
-   Tithes:    ${totals.tithes}  (~${Math.round(totals.tithes / (years.length - 0.5))} /yr)
-   Offerings: ${totals.offerings}  (~${Math.round(totals.offerings / (years.length - 0.5))} /yr)
-   Expenses:  ${totals.expenses}  (~${Math.round(totals.expenses / (years.length - 0.5))} /yr)
-   Total:     ${grandTotal}
+📊 Records seeded:
+   Users:                  ${users.length}
+   Church Services:        ${serviceRows.length}
+   Tithes:                 ${titheRows.length}
+   Offerings:              ${offeringRows.length}
+   Expenses:               ${expenseRows.length}
+   Harambees:              ${harambees.length}
+   Harambee Contributions: ${contribRows.length}
+   Event Contributions:    ${eventRows.length}
+   Audit Logs:             ${auditRows.length}
 
 📋 Test Accounts:
    Super Admin:  admin@churchfinance.pro    / Admin@123
    Manager:      manager@churchfinance.pro  / Manager@123
-   Partner:      elder@churchfinance.pro    / Partner@123
-                 grace@churchfinance.pro    / Partner@123
-                 john@churchfinance.pro     / Partner@123
-                 faith@churchfinance.pro    / Partner@123
-                 peter@churchfinance.pro    / Partner@123
+   Manager:      elder@churchfinance.pro    / Manager@123
+
+📅 Data range: 1 Jan 2024 → 19 Jul 2026
 `);
 }
 

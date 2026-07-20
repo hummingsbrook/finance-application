@@ -58,6 +58,22 @@ async function getTitheById(id) {
 async function createTithe(data) {
   const amount = roundMoney(data.amount);
 
+  // ── Uniqueness checks (server-side source of truth) ─────────────────────────
+  // M-Pesa receipt numbers and cheque numbers must be unique per module.
+  // Throws DUPLICATE_MPESA / DUPLICATE_CHEQUE so the controller can return 409.
+  if (data.mpesaReceiptNo) {
+    const existing = await prisma.tithe.findFirst({ where: { mpesaReceiptNo: data.mpesaReceiptNo } });
+    if (existing) {
+      throw Object.assign(new Error('Duplicate M-Pesa receipt number.'), { code: 'DUPLICATE_MPESA' });
+    }
+  }
+  if (data.chequeNumber) {
+    const existing = await prisma.tithe.findFirst({ where: { chequeNumber: data.chequeNumber } });
+    if (existing) {
+      throw Object.assign(new Error('Duplicate cheque number.'), { code: 'DUPLICATE_CHEQUE' });
+    }
+  }
+
   return prisma.tithe.create({
     data: {
       contributorName: data.contributorName,
@@ -88,6 +104,24 @@ async function updateTithe(id, data) {
   if (data.idNumber !== undefined) updateData.idNumber = data.idNumber;
   if (data.notes !== undefined) updateData.notes = data.notes;
   if (data.status !== undefined) updateData.status = data.status;
+
+  // ── Uniqueness checks (exclude the record being updated) ───────────────────
+  if (data.mpesaReceiptNo) {
+    const existing = await prisma.tithe.findFirst({
+      where: { mpesaReceiptNo: data.mpesaReceiptNo, NOT: { id } },
+    });
+    if (existing) {
+      throw Object.assign(new Error('Duplicate M-Pesa receipt number.'), { code: 'DUPLICATE_MPESA' });
+    }
+  }
+  if (data.chequeNumber) {
+    const existing = await prisma.tithe.findFirst({
+      where: { chequeNumber: data.chequeNumber, NOT: { id } },
+    });
+    if (existing) {
+      throw Object.assign(new Error('Duplicate cheque number.'), { code: 'DUPLICATE_CHEQUE' });
+    }
+  }
 
   return prisma.tithe.update({
     where: { id },
@@ -178,6 +212,26 @@ async function deleteTithe(id) {
   });
 }
 
+async function checkTitheDuplicate(filters = {}) {
+  const { mpesaReceiptNo, chequeNumber, excludeId } = filters;
+  const where = { OR: [] };
+
+  if (mpesaReceiptNo) {
+    where.OR.push({ mpesaReceiptNo });
+  }
+  if (chequeNumber) {
+    where.OR.push({ chequeNumber });
+  }
+
+  if (where.OR.length === 0) return null;
+
+  if (excludeId) {
+    where.id = { not: excludeId };
+  }
+
+  return prisma.tithe.findFirst({ where });
+}
+
 /**
  * getTitheYearlySummary({ year })
  * Aggregates full-year KPIs for the selected year + last 5 years trend.
@@ -256,4 +310,5 @@ module.exports = {
   deleteTithe,
   getTitheSummary,
   getTitheYearlySummary,
+  checkTitheDuplicate,
 };

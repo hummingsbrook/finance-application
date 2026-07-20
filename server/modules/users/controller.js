@@ -26,9 +26,9 @@ async function create(req, res) {
       return error(res, 'email, password, firstName, and lastName are required.', 400, 'VALIDATION_ERROR');
     }
 
-    const validRoles = ['PARTNER', 'MANAGER', 'SUPER_ADMIN'];
+    const validRoles = ['MANAGER', 'SUPER_ADMIN'];
     if (role && !validRoles.includes(role)) {
-      return error(res, 'Invalid role. Must be PARTNER, MANAGER, or SUPER_ADMIN.', 400, 'VALIDATION_ERROR');
+      return error(res, 'Invalid role. Must be MANAGER or SUPER_ADMIN.', 400, 'VALIDATION_ERROR');
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -40,7 +40,7 @@ async function create(req, res) {
       passwordHash,
       firstName,
       lastName,
-      role: role || 'PARTNER',
+      role: role || 'MANAGER',
       phone,
       isActive,
     });
@@ -77,9 +77,9 @@ async function update(req, res) {
       data.passwordHash = await bcrypt.hash(password, 10);
     }
 
-    const validRoles = ['PARTNER', 'MANAGER', 'SUPER_ADMIN'];
+    const validRoles = ['MANAGER', 'SUPER_ADMIN'];
     if (role && !validRoles.includes(role)) {
-      return error(res, 'Invalid role. Must be PARTNER, MANAGER, or SUPER_ADMIN.', 400, 'VALIDATION_ERROR');
+      return error(res, 'Invalid role. Must be MANAGER or SUPER_ADMIN.', 400, 'VALIDATION_ERROR');
     }
 
     const user = await service.updateUser(req.params.id, data);

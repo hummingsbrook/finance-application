@@ -32,8 +32,8 @@ export default function ConfirmDialog({
           <Button
             variant={danger ? 'danger' : 'primary'}
             size="sm"
-            onClick={() => {
-              onConfirm();
+            onClick={async () => {
+              await onConfirm();
               onClose();
             }}
           >

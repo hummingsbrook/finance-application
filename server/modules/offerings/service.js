@@ -279,6 +279,20 @@ async function createOffering(data) {
     throw Object.assign(new Error('Invalid service type. Must be Sunday Main or Sunday School.'), { status: 400 });
   }
 
+  // ── Uniqueness checks (server-side source of truth) ─────────────────────────
+  if (data.mpesaReceiptNo) {
+    const existing = await prisma.offering.findFirst({ where: { mpesaReceiptNo: data.mpesaReceiptNo } });
+    if (existing) {
+      throw Object.assign(new Error('Duplicate M-Pesa receipt number.'), { code: 'DUPLICATE_MPESA' });
+    }
+  }
+  if (data.chequeNumber) {
+    const existing = await prisma.offering.findFirst({ where: { chequeNumber: data.chequeNumber } });
+    if (existing) {
+      throw Object.assign(new Error('Duplicate cheque number.'), { code: 'DUPLICATE_CHEQUE' });
+    }
+  }
+
   return prisma.offering.create({
     data: {
       contributorName: data.contributorName,
@@ -316,6 +330,24 @@ async function updateOffering(id, data) {
   if (data.notes !== undefined) updateData.notes = data.notes;
   if (data.status !== undefined) updateData.status = data.status;
 
+  // ── Uniqueness checks (exclude the record being updated) ───────────────────
+  if (data.mpesaReceiptNo) {
+    const existing = await prisma.offering.findFirst({
+      where: { mpesaReceiptNo: data.mpesaReceiptNo, NOT: { id } },
+    });
+    if (existing) {
+      throw Object.assign(new Error('Duplicate M-Pesa receipt number.'), { code: 'DUPLICATE_MPESA' });
+    }
+  }
+  if (data.chequeNumber) {
+    const existing = await prisma.offering.findFirst({
+      where: { chequeNumber: data.chequeNumber, NOT: { id } },
+    });
+    if (existing) {
+      throw Object.assign(new Error('Duplicate cheque number.'), { code: 'DUPLICATE_CHEQUE' });
+    }
+  }
+
   return prisma.offering.update({
     where: { id },
     data: updateData,
@@ -327,6 +359,26 @@ async function deleteOffering(id) {
   return prisma.offering.delete({ where: { id } });
 }
 
+async function checkOfferingDuplicate(filters = {}) {
+  const { mpesaReceiptNo, chequeNumber, excludeId } = filters;
+  const where = { OR: [] };
+
+  if (mpesaReceiptNo) {
+    where.OR.push({ mpesaReceiptNo });
+  }
+  if (chequeNumber) {
+    where.OR.push({ chequeNumber });
+  }
+
+  if (where.OR.length === 0) return null;
+
+  if (excludeId) {
+    where.id = { not: excludeId };
+  }
+
+  return prisma.offering.findFirst({ where });
+}
+
 module.exports = {
   listOfferings,
   getOfferingById,
@@ -335,4 +387,5 @@ module.exports = {
   createOffering,
   updateOffering,
   deleteOffering,
+  checkOfferingDuplicate,
 };

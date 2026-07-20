@@ -8,8 +8,10 @@ import Card from '../../components/ui/Card';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import KpiCard from '../../components/ui/KpiCard';
 import UniversalTable from '../../components/ui/UniversalTable';
+import OfferingEditOverlay from '../../components/ui/OfferingEditOverlay';
 import ReactECharts from 'echarts-for-react';
 import { useFormValidation } from '../../hooks/useFormValidation';
+import useDuplicateCheck from '../../hooks/useDuplicateCheck';
 
 const SERVICE_TYPES = ['Sunday Main', 'Sunday School'];
 
@@ -83,6 +85,10 @@ export default function Offerings() {
 
   const { fieldErrors, validate, clearFieldError, clearAllErrors } = useFormValidation();
 
+  // Real-time duplicate check for M-Pesa receipt & cheque numbers in the Record tab form.
+  // The edit overlay has its own instance of this hook (with excludeId).
+  const { duplicateError: formDuplicateError, checkDuplicate: checkFormDuplicate, clearDuplicateError: clearFormDuplicateError } = useDuplicateCheck('offerings');
+
   // ─── Scroll preservation ───
   const saveScroll    = () => document.getElementById('main-scroll')?.scrollTop ?? 0;
   const restoreScroll = (pos) => {
@@ -93,9 +99,8 @@ export default function Offerings() {
   // ─── Summary (KPI + chart data) ───
   const [summary, setSummary] = useState(null);
 
-  // ─── Edit ───
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({});
+  // ─── Edit overlay state — drives OfferingEditOverlay
+  const [editingOffering, setEditingOffering] = useState(null);
 
   // ─── Delete ───
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -197,6 +202,11 @@ export default function Offerings() {
   // ─── Record form handlers ───
   const handleChange = (e) => {
     setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+    // Clear duplicate-check error whenever the user edits either the M-Pesa
+    // receipt or cheque number — a fresh onBlur will re-validate.
+    if (e.target.name === 'mpesaReceiptNo' || e.target.name === 'chequeNumber') {
+      clearFormDuplicateError();
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -216,6 +226,14 @@ export default function Offerings() {
     }
     if (!validate(errors)) return;
 
+    // Block submit if a duplicate-check error is currently active for either field.
+    // The server will catch any race condition on create, but this prevents
+    // the user from submitting an obviously-duplicate value.
+    if (formDuplicateError) {
+      showError(formDuplicateError);
+      return;
+    }
+
     setSubmitting(true);
     setSubmitSuccess(false);
     try {
@@ -233,6 +251,7 @@ export default function Offerings() {
       });
       setSubmitSuccess(true);
       clearAllErrors();
+      clearFormDuplicateError();
       setForm({
         contributorName: '',
         amount: '',
@@ -268,47 +287,20 @@ export default function Offerings() {
     }
   };
 
-  // ─── Edit handlers ───
-  const handleEditClick = (o) => {
-    setEditingId(o.id);
-    setEditForm({
-      contributorName: o.contributorName || '',
-      amount: o.amount != null ? String(o.amount) : '',
-      date: o.date ? o.date.split('T')[0] : '',
-      serviceType: o.serviceType || 'Sunday Main',
-      paymentMethod: (o.paymentMethod || 'CASH').toLowerCase(),
-      mpesaReceiptNo: o.mpesaReceiptNo || '',
-      bankName: o.bankName || '',
-      chequeNumber: o.chequeNumber || '',
-      idNumber: o.idNumber || '',
-      notes: o.notes || '',
-    });
-  };
-
-  const handleEditChange = (e) => {
-    setEditForm((p) => ({ ...p, [e.target.name]: e.target.value }));
-  };
-
-  const handleEditSave = async (id) => {
+  // ─── Edit overlay handler (full-detail modal) ───
+  // Opens OfferingEditOverlay with the row pre-populated; the overlay owns its
+  // internal form state and calls back into `handleEditOffering` on save.
+  const handleEditOffering = useCallback(async (id, payload) => {
     try {
-      await api.put(`/offerings/${id}`, {
-        ...editForm,
-        paymentMethod: editForm.paymentMethod === 'bank' ? 'BANK_TRANSFER' : editForm.paymentMethod.toUpperCase(),
-        amount: parseFloat(editForm.amount),
-      });
-      setEditingId(null);
-      setEditForm({});
+      await api.put(`/offerings/${id}`, payload);
       fetchOfferingsList(page);
       fetchSummaryData();
+      fetchRecentOfferings();
     } catch (err) {
-      showError(err?.response?.data?.message || 'Failed to update offering');
+      showError(err?.response?.data?.message || 'Failed to update offering.');
+      throw err; // Re-throw so the overlay doesn't close on error
     }
-  };
-
-  const handleEditCancel = () => {
-    setEditingId(null);
-    setEditForm({});
-  };
+  }, [fetchOfferingsList, fetchSummaryData, fetchRecentOfferings, page, showError]);
 
   // ─── CSV Export ───
   const [exportLoading, setExportLoading] = useState(false);
@@ -597,8 +589,9 @@ export default function Offerings() {
                     name="mpesaReceiptNo"
                     value={form.mpesaReceiptNo}
                     onChange={(e) => { handleChange(e); clearFieldError('mpesaReceiptNo'); }}
+                    onBlur={() => checkFormDuplicate(form.mpesaReceiptNo, 'mpesaReceiptNo')}
                     placeholder="e.g. RJH8945KL3"
-                    error={fieldErrors.mpesaReceiptNo}
+                    error={fieldErrors.mpesaReceiptNo || (formDuplicateError && form.mpesaReceiptNo ? formDuplicateError : undefined)}
                   />
                 )}
 
@@ -622,9 +615,10 @@ export default function Offerings() {
                         name="chequeNumber"
                         value={form.chequeNumber}
                         onChange={(e) => { handleChange(e); clearFieldError('chequeNumber'); }}
+                        onBlur={() => checkFormDuplicate(form.chequeNumber, 'chequeNumber')}
                         placeholder="e.g. 000123456"
                         required
-                        error={fieldErrors.chequeNumber}
+                        error={fieldErrors.chequeNumber || (formDuplicateError && form.chequeNumber ? formDuplicateError : undefined)}
                       />
                     </div>
                     <Input
@@ -1125,117 +1119,61 @@ export default function Offerings() {
                     </span>
                   </div>
                 }
-                renderRow={(o, idx) => {
-                  if (editingId === o.id) {
-                    return (
-                      <tr key={o.id} className="border-b border-outline-variant/30">
-                        <td className="px-6 py-4">
-                          <input
-                            type="date"
-                            name="date"
-                            value={editForm.date}
-                            onChange={handleEditChange}
-                            className="w-full px-2 py-1 border border-outline-variant rounded text-sm outline-none focus:border-primary"
-                          />
-                        </td>
-                        <td className="px-6 py-4">
-                          <select
-                            name="serviceType"
-                            value={editForm.serviceType}
-                            onChange={handleEditChange}
-                            className="w-full px-2 py-1 border border-outline-variant rounded text-sm outline-none focus:border-primary"
-                          >
-                            {SERVICE_TYPES.map((st) => (
-                              <option key={st} value={st}>{st}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-surface-container-highest flex items-center justify-center text-[10px] font-bold">
-                              {o.recordedByUser
-                                ? `${(o.recordedByUser.firstName || '')[0] || '?'}${(o.recordedByUser.lastName || '')[0] || '?'}`
-                                : '??'}
-                            </div>
-                            <span className="text-body-sm">
-                              {o.recordedByUser
-                                ? `${o.recordedByUser.firstName || ''} ${o.recordedByUser.lastName || ''}`.trim()
-                                : 'Unknown'}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <select
-                            name="paymentMethod"
-                            value={editForm.paymentMethod}
-                            onChange={handleEditChange}
-                            className="w-full px-2 py-1 border border-outline-variant rounded text-sm outline-none focus:border-primary"
-                          >
-                            <option value="cash">Cash</option>
-                            <option value="mpesa">M-Pesa</option>
-                            <option value="bank_transfer">Bank Transfer</option>
-                          </select>
-                        </td>
-                        <td className="px-6 py-4">
-                          <input
-                            type="number"
-                            name="amount"
-                            value={editForm.amount}
-                            onChange={handleEditChange}
-                            className="w-full px-2 py-1 border border-outline-variant rounded text-sm text-right outline-none focus:border-primary"
-                          />
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <div className="flex justify-center gap-3">
-                            <button onClick={() => handleEditSave(o.id)} className="text-secondary hover:text-primary cursor-pointer" title="Save">
-                              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>check</span>
-                            </button>
-                            <button onClick={handleEditCancel} className="text-error cursor-pointer" title="Cancel">
-                              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>close</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
-                  return (
-                    <tr key={o.id} className={`hover:bg-surface-container transition-colors ${idx % 2 === 1 ? 'bg-surface-container-low/30' : ''}`}>
-                      <td className="px-6 py-4 text-body-sm">{formatDate(o.date)}</td>
-                      <td className="px-6 py-4">{serviceTypeBadge(o.serviceType)}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-surface-container-highest flex items-center justify-center text-[10px] font-bold">
-                            {o.recordedByUser
-                              ? `${(o.recordedByUser.firstName || '')[0] || '?'}${(o.recordedByUser.lastName || '')[0] || '?'}`
-                              : '??'}
-                          </div>
-                          <span className="text-body-sm">
-                            {o.recordedByUser
-                              ? `${o.recordedByUser.firstName || ''} ${o.recordedByUser.lastName || ''}`.trim()
-                              : 'Unknown'}
-                          </span>
+                renderRow={(o, idx) => (
+                  <tr key={o.id} className={`hover:bg-surface-container transition-colors ${idx % 2 === 1 ? 'bg-surface-container-low/30' : ''}`}>
+                    <td className="px-6 py-4 text-body-sm">{formatDate(o.date)}</td>
+                    <td className="px-6 py-4">{serviceTypeBadge(o.serviceType)}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-surface-container-highest flex items-center justify-center text-[10px] font-bold">
+                          {o.recordedByUser
+                            ? `${(o.recordedByUser.firstName || '')[0] || '?'}${(o.recordedByUser.lastName || '')[0] || '?'}`
+                            : '??'}
                         </div>
-                      </td>
-                      <td className="px-6 py-4 text-body-sm">{paymentMethodLabel(o.paymentMethod)}</td>
-                      <td className="px-6 py-4 text-right font-bold text-primary">{formatKESFull(o.amount)}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex justify-center gap-3">
-                          <button onClick={() => handleEditClick(o)} className="text-on-surface-variant hover:text-primary cursor-pointer" title="Edit">
-                            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>edit</span>
-                          </button>
-                          <button onClick={() => setConfirmDeleteId(o.id)} className="text-on-surface-variant hover:text-error cursor-pointer" title="Delete">
-                            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>delete</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }}
+                        <span className="text-body-sm">
+                          {o.recordedByUser
+                            ? `${o.recordedByUser.firstName || ''} ${o.recordedByUser.lastName || ''}`.trim()
+                            : 'Unknown'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-body-sm">{paymentMethodLabel(o.paymentMethod)}</td>
+                    <td className="px-6 py-4 text-right font-bold text-primary">{formatKESFull(o.amount)}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex justify-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setEditingOffering(o)}
+                          className="text-on-surface-variant hover:text-primary cursor-pointer"
+                          title="Edit"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(o.id)}
+                          className="text-on-surface-variant hover:text-error cursor-pointer"
+                          title="Delete"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>delete</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
               />
             </>
           )}
         </div>
       )}
+
+      {/* Edit overlay — full-detail modal driven by editingOffering */}
+      <OfferingEditOverlay
+        isOpen={!!editingOffering}
+        offering={editingOffering}
+        onClose={() => setEditingOffering(null)}
+        onSave={handleEditOffering}
+      />
 
       <ConfirmDialog
         isOpen={!!confirmDeleteId}

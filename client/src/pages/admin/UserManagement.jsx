@@ -9,6 +9,21 @@ import TableHeader from '../../components/ui/TableHeader';
 
 const PAGE_SIZE = 10;
 
+const ROLE_OPTIONS = [
+  { value: 'MANAGER', label: 'Manager' },
+  { value: 'SUPER_ADMIN', label: 'Super Admin' },
+];
+
+const INITIAL_CREATE_FORM = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  role: '',
+  password: '',
+  confirmPassword: '',
+};
+
 const ROLE_STYLES = {
   SUPER_ADMIN: { bg: 'bg-[#FFF8E1] text-[#7B3F00] border border-[#FFD54F]', label: 'Super Admin' },
   MANAGER: { bg: 'bg-primary/10 text-primary', label: 'Manager' },
@@ -35,6 +50,14 @@ export default function UserManagement() {
   const [saving, setSaving] = useState(false);
   const [bulkAction, setBulkAction] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState(null);
+
+  // ─── Create User Modal State ───
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({ ...INITIAL_CREATE_FORM });
+  const [createErrors, setCreateErrors] = useState({});
+  const [createServerError, setCreateServerError] = useState('');
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [createSuccess, setCreateSuccess] = useState(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -159,6 +182,98 @@ export default function UserManagement() {
     return `${days}d ago`;
   };
 
+  // ─── Create User Handlers ───
+  const handleCreateChange = (field, value) => {
+    setCreateForm((prev) => ({ ...prev, [field]: value }));
+    if (createErrors[field]) {
+      setCreateErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+    // Clear any top-level server error as soon as the user edits any field
+    if (createServerError) setCreateServerError('');
+  };
+
+  const validateCreateForm = () => {
+    const errs = {};
+    if (!createForm.firstName?.trim()) errs.firstName = 'First name is required.';
+    if (!createForm.lastName?.trim()) errs.lastName = 'Last name is required.';
+    if (!createForm.email?.trim()) {
+      errs.email = 'Email is required.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(createForm.email)) {
+      errs.email = 'Please enter a valid email address.';
+    }
+    if (!createForm.role) errs.role = 'Please select a role.';
+    if (!createForm.password) {
+      errs.password = 'Password is required.';
+    } else if (createForm.password.length < 8) {
+      errs.password = 'Password must be at least 8 characters.';
+    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(createForm.password)) {
+      errs.password = 'Password must include uppercase, lowercase, and a number.';
+    }
+    if (!createForm.confirmPassword) {
+      errs.confirmPassword = 'Please confirm the password.';
+    } else if (createForm.password !== createForm.confirmPassword) {
+      errs.confirmPassword = 'Passwords do not match.';
+    }
+    if (createForm.phone && createForm.phone.trim()) {
+      const cleaned = createForm.phone.replace(/\s+/g, '');
+      if (!/^(\+254|0)[17]\d{8}$/.test(cleaned)) {
+        errs.phone = 'Enter a valid Kenyan phone number.';
+      }
+    }
+    setCreateErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    if (!validateCreateForm()) return;
+    setCreateSubmitting(true);
+    try {
+      const { confirmPassword, ...payload } = createForm;
+      await api.post('/users', payload);
+      setCreateSuccess({
+        firstName: createForm.firstName,
+        lastName: createForm.lastName,
+        email: createForm.email,
+        role: createForm.role,
+      });
+      setCreateForm({ ...INITIAL_CREATE_FORM });
+      setCreateErrors({});
+      setCreateServerError('');
+      fetchUsers();
+    } catch (err) {
+      const msg = err.response?.data?.message;
+      if (msg && typeof msg === 'object') {
+        // Field-level validation errors from server — render inline below each input
+        const serverErrors = {};
+        Object.keys(msg).forEach((key) => {
+          serverErrors[key] = Array.isArray(msg[key]) ? msg[key][0] : msg[key];
+        });
+        setCreateErrors(serverErrors);
+        setCreateServerError('');
+      } else if (typeof msg === 'string' && msg) {
+        // Top-level server error (e.g. "Email already in use") — render as a red banner
+        setCreateServerError(msg);
+      } else {
+        setCreateServerError('Failed to create account. Please try again.');
+      }
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
+
+  const resetCreateModal = () => {
+    setCreateModalOpen(false);
+    setCreateForm({ ...INITIAL_CREATE_FORM });
+    setCreateErrors({});
+    setCreateServerError('');
+    setCreateSuccess(null);
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-16">
@@ -235,6 +350,13 @@ export default function UserManagement() {
             />
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={() => setCreateModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary font-label-md rounded-full hover:bg-primary/90 transition-colors active:scale-95"
+            >
+              <span className="material-symbols-outlined text-[18px]">person_add</span>
+              Create User
+            </button>
             <select
               value={roleFilter}
               onChange={(e) => {
@@ -517,6 +639,264 @@ export default function UserManagement() {
           </div>
         </div>
       </div>
+
+      {/* ── Create User Modal ── */}
+      {createModalOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm"
+            onClick={resetCreateModal}
+            aria-hidden="true"
+          />
+
+          {/* Modal Panel */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-surface-container-lowest rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant sticky top-0 bg-surface-container-lowest">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary-container flex items-center justify-center">
+                    <span className="material-symbols-outlined text-on-primary-container" style={{ fontSize: 20 }}>
+                      person_add
+                    </span>
+                  </div>
+                  <h2 className="text-title-lg font-bold text-on-surface">Create New User</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetCreateModal}
+                  className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 22 }}>close</span>
+                </button>
+              </div>
+
+              {/* Success State */}
+              {createSuccess ? (
+                <div className="p-8 space-y-6">
+                  <div className="flex flex-col items-center text-center space-y-3">
+                    <span className="material-symbols-outlined text-secondary" style={{ fontSize: 64, fontVariationSettings: "'FILL' 1" }}>
+                      check_circle
+                    </span>
+                    <h3 className="text-headline-md text-on-surface">Account created successfully!</h3>
+                    <p className="text-body-sm text-on-surface-variant">The user has been added to the system.</p>
+                  </div>
+
+                  <div className="bg-surface-container-low rounded-xl p-4 border border-outline-variant flex items-center gap-4">
+                    <div className="w-12 h-12 bg-primary-container text-on-primary rounded-full flex items-center justify-center font-bold text-lg">
+                      {getInitials(createSuccess.firstName, createSuccess.lastName)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-body-sm font-semibold text-on-surface truncate">
+                        {createSuccess.firstName} {createSuccess.lastName}
+                      </p>
+                      <p className="text-body-sm text-on-surface-variant text-[13px]">{createSuccess.email}</p>
+                    </div>
+                    <div>
+                      <span className="bg-secondary-container text-on-secondary-container text-[10px] px-2 py-1 rounded-full uppercase font-bold tracking-wider">
+                        {ROLE_OPTIONS.find(r => r.value === createSuccess.role)?.label || createSuccess.role}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => {
+                        setCreateSuccess(null);
+                        setCreateForm({ ...INITIAL_CREATE_FORM });
+                        setCreateErrors({});
+                      }}
+                      className="flex-1 px-5 py-2.5 border border-secondary text-secondary hover:bg-secondary hover:text-on-secondary transition-colors rounded-lg text-label-md font-semibold"
+                    >
+                      Create Another
+                    </button>
+                    <button
+                      onClick={resetCreateModal}
+                      className="flex-1 px-5 py-2.5 bg-primary text-on-primary hover:bg-primary/90 transition-colors rounded-lg text-label-md font-semibold"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Form */
+                <form onSubmit={handleCreateUser} className="p-6 space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* First Name */}
+                    <div className="space-y-1.5">
+                      <label className={`text-label-md block ${createErrors.firstName ? 'text-error font-semibold' : 'text-on-surface'}`}>
+                        First Name <span className="text-error">*</span>
+                      </label>
+                      <input
+                        className={`w-full h-10 px-3 bg-surface border rounded focus:outline-none focus:ring-2 transition-shadow text-body-sm ${
+                          createErrors.firstName ? 'border-2 border-error focus:border-error focus:ring-error/20' : 'border-outline-variant focus:border-primary focus:ring-secondary-container'
+                        }`}
+                        placeholder="e.g. Jane"
+                        type="text"
+                        value={createForm.firstName}
+                        onChange={(e) => handleCreateChange('firstName', e.target.value)}
+                      />
+                      {createErrors.firstName && <p className="text-[12px] text-error">{createErrors.firstName}</p>}
+                    </div>
+
+                    {/* Last Name */}
+                    <div className="space-y-1.5">
+                      <label className={`text-label-md block ${createErrors.lastName ? 'text-error font-semibold' : 'text-on-surface'}`}>
+                        Last Name <span className="text-error">*</span>
+                      </label>
+                      <input
+                        className={`w-full h-10 px-3 bg-surface border rounded focus:outline-none focus:ring-2 transition-shadow text-body-sm ${
+                          createErrors.lastName ? 'border-2 border-error focus:border-error focus:ring-error/20' : 'border-outline-variant focus:border-primary focus:ring-secondary-container'
+                        }`}
+                        placeholder="e.g. Doe"
+                        type="text"
+                        value={createForm.lastName}
+                        onChange={(e) => handleCreateChange('lastName', e.target.value)}
+                      />
+                      {createErrors.lastName && <p className="text-[12px] text-error">{createErrors.lastName}</p>}
+                    </div>
+
+                    {/* Email */}
+                    <div className="space-y-1.5">
+                      <label className={`text-label-md block ${createErrors.email ? 'text-error font-semibold' : 'text-on-surface'}`}>
+                        Email Address <span className="text-error">*</span>
+                      </label>
+                      <input
+                        className={`w-full h-10 px-3 bg-surface border rounded focus:outline-none focus:ring-2 transition-shadow text-body-sm ${
+                          createErrors.email ? 'border-2 border-error focus:border-error focus:ring-error/20' : 'border-outline-variant focus:border-primary focus:ring-secondary-container'
+                        }`}
+                        placeholder="name@domain.com"
+                        type="email"
+                        value={createForm.email}
+                        onChange={(e) => handleCreateChange('email', e.target.value)}
+                      />
+                      {createErrors.email && <p className="text-[12px] text-error">{createErrors.email}</p>}
+                    </div>
+
+                    {/* Phone */}
+                    <div className="space-y-1.5">
+                      <label className={`text-label-md block ${createErrors.phone ? 'text-error font-semibold' : 'text-on-surface'}`}>
+                        Phone Number
+                      </label>
+                      <input
+                        className={`w-full h-10 px-3 bg-surface border rounded focus:outline-none focus:ring-2 transition-shadow text-body-sm ${
+                          createErrors.phone ? 'border-2 border-error focus:border-error focus:ring-error/20' : 'border-outline-variant focus:border-primary focus:ring-secondary-container'
+                        }`}
+                        placeholder="+254 712 345 678"
+                        type="tel"
+                        value={createForm.phone}
+                        onChange={(e) => handleCreateChange('phone', e.target.value)}
+                      />
+                      {createErrors.phone && <p className="text-[12px] text-error">{createErrors.phone}</p>}
+                    </div>
+
+                    {/* Role */}
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className={`text-label-md block ${createErrors.role ? 'text-error font-semibold' : 'text-on-surface'}`}>
+                        Role <span className="text-error">*</span>
+                      </label>
+                      <select
+                        value={createForm.role}
+                        onChange={(e) => handleCreateChange('role', e.target.value)}
+                        className={`w-full max-w-xs h-10 pl-3 pr-10 bg-surface border rounded focus:outline-none focus:ring-2 transition-shadow text-body-sm appearance-none ${
+                          createErrors.role ? 'border-2 border-error focus:border-error focus:ring-error/20' : 'border-outline-variant focus:border-primary focus:ring-secondary-container'
+                        }`}
+                      >
+                        <option disabled value="">Select a role...</option>
+                        {ROLE_OPTIONS.map((r) => (
+                          <option key={r.value} value={r.value}>{r.label}</option>
+                        ))}
+                      </select>
+                      {createErrors.role && <p className="text-[12px] text-error">{createErrors.role}</p>}
+                    </div>
+
+                    {/* Password */}
+                    <div className="space-y-1.5">
+                      <label className={`text-label-md block ${createErrors.password ? 'text-error font-semibold' : 'text-on-surface'}`}>
+                        Password <span className="text-error">*</span>
+                      </label>
+                      <input
+                        className={`w-full h-10 px-3 bg-surface border rounded focus:outline-none focus:ring-2 transition-shadow text-body-sm ${
+                          createErrors.password ? 'border-2 border-error focus:border-error focus:ring-error/20' : 'border-outline-variant focus:border-primary focus:ring-secondary-container'
+                        }`}
+                        placeholder="Min 8 characters"
+                        type="password"
+                        value={createForm.password}
+                        onChange={(e) => handleCreateChange('password', e.target.value)}
+                      />
+                      {createErrors.password && <p className="text-[12px] text-error">{createErrors.password}</p>}
+                    </div>
+
+                    {/* Confirm Password */}
+                    <div className="space-y-1.5">
+                      <label className={`text-label-md block ${createErrors.confirmPassword ? 'text-error font-semibold' : 'text-on-surface'}`}>
+                        Confirm Password <span className="text-error">*</span>
+                      </label>
+                      <input
+                        className={`w-full h-10 px-3 bg-surface border rounded focus:outline-none focus:ring-2 transition-shadow text-body-sm ${
+                          createErrors.confirmPassword ? 'border-2 border-error focus:border-error focus:ring-error/20' : 'border-outline-variant focus:border-primary focus:ring-secondary-container'
+                        }`}
+                        placeholder="Re-enter password"
+                        type="password"
+                        value={createForm.confirmPassword}
+                        onChange={(e) => handleCreateChange('confirmPassword', e.target.value)}
+                      />
+                      {createErrors.confirmPassword && <p className="text-[12px] text-error">{createErrors.confirmPassword}</p>}
+                    </div>
+                  </div>
+
+                  {/* Server error banner (e.g. "Email already in use") */}
+                  {createServerError && (
+                    <div className="flex items-start gap-3 p-3 bg-error-container/30 border border-error/30 rounded-lg">
+                      <span className="material-symbols-outlined text-error shrink-0" style={{ fontSize: 20 }}>
+                        error
+                      </span>
+                      <p className="text-label-md text-error flex-1">{createServerError}</p>
+                      <button
+                        type="button"
+                        onClick={() => setCreateServerError('')}
+                        className="text-error hover:bg-error/10 rounded p-0.5 shrink-0"
+                        aria-label="Dismiss error"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 18 }}>close</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Footer */}
+                  <div className="pt-4 border-t border-outline-variant flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={resetCreateModal}
+                      className="px-5 py-2.5 border border-outline-variant/50 text-on-surface hover:bg-surface-container-low text-label-md transition-colors rounded-lg"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={createSubmitting}
+                      className="px-6 py-2.5 bg-primary text-on-primary hover:bg-primary/90 text-label-md font-semibold transition-colors rounded-lg disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {createSubmitting ? (
+                        <>
+                          <span className="material-symbols-outlined animate-spin" style={{ fontSize: 18 }}>sync</span>
+                          Creating...
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>person_add</span>
+                          Create Account
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
