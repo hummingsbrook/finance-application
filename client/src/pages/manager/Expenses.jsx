@@ -7,8 +7,11 @@ import Input from '../../components/ui/Input';
 import Card from '../../components/ui/Card';
 import KpiCard from '../../components/ui/KpiCard';
 import UniversalTable from '../../components/ui/UniversalTable';
+import ExpenseEditOverlay from '../../components/ui/ExpenseEditOverlay';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import ReactECharts from 'echarts-for-react';
 import { useFormValidation } from '../../hooks/useFormValidation';
+import useDuplicateCheck from '../../hooks/useDuplicateCheck';
 import { EXPENSE_CATEGORIES, CATEGORY_LABELS, SALARY_TYPES, SALARY_TYPE_LABELS } from '../../constants/expenseCategories';
 
 const TABS = [
@@ -102,6 +105,10 @@ export default function Expenses() {
 
   const { fieldErrors, validate, clearFieldError, clearAllErrors } = useFormValidation();
 
+  // Real-time duplicate check for M-Pesa receipts in the Record tab form.
+  // The edit overlay has its own instance of this hook (with excludeId).
+  const { duplicateError: formDuplicateError, checkDuplicate: checkFormDuplicate, clearDuplicateError: clearFormDuplicateError } = useDuplicateCheck('expenses');
+
   // ─── Scroll preservation ───
   const saveScroll    = () => document.getElementById('main-scroll')?.scrollTop ?? 0;
   const restoreScroll = (pos) => {
@@ -181,7 +188,14 @@ export default function Expenses() {
   }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Record form handlers ───
-  const handleChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  const handleChange = (e) => {
+    setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+    // Clear duplicate-check error whenever the user edits the M-Pesa receipt —
+    // a fresh onBlur will re-validate.
+    if (e.target.name === 'mpesaReceiptNo') {
+      clearFormDuplicateError();
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -202,6 +216,14 @@ export default function Expenses() {
     }
     if (!validate(errors)) return;
 
+    // Block submit if a duplicate-check error is currently active for the M-Pesa receipt.
+    // The server will catch any race condition on create, but this prevents
+    // the user from submitting an obviously-duplicate value.
+    if (formDuplicateError) {
+      showError(formDuplicateError);
+      return;
+    }
+
     setSubmitting(true);
     setSubmitSuccess(false);
     try {
@@ -221,6 +243,7 @@ export default function Expenses() {
       });
       setSubmitSuccess(true);
       clearAllErrors();
+      clearFormDuplicateError();
       setForm({
         description:'', amount:'',
         date: new Date().toISOString().split('T')[0],
@@ -301,6 +324,42 @@ export default function Expenses() {
     return `KES ${Number(val).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   const [exportLoading, setExportLoading] = useState(false);
+
+  // ─── Edit overlay state ───
+  const [editingExpense, setEditingExpense] = useState(null);
+
+  // ─── Delete confirmation state ───
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // ─── Edit expense handler ───
+  const handleEditExpense = useCallback(async (id, data) => {
+    try {
+      await api.put(`/expenses/${id}`, data);
+      fetchExpenses();
+      fetchSummary();
+    } catch (err) {
+      showError(err?.response?.data?.message || 'Failed to update expense.');
+      throw err; // Re-throw so overlay doesn't close on error
+    }
+  }, [fetchExpenses, fetchSummary, showError]);
+
+  // ─── Delete expense handler ───
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/expenses/${deleteTarget}`);
+      setDeleteTarget(null);
+      setPage(1);
+      fetchExpenses();
+      fetchSummary();
+    } catch (err) {
+      showError(err?.response?.data?.message || 'Failed to delete expense.');
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, fetchExpenses, fetchSummary, showError]);
 
   const handleExportCSV = async () => {
     setExportLoading(true);
@@ -525,8 +584,9 @@ export default function Expenses() {
                     name="mpesaReceiptNo"
                     value={form.mpesaReceiptNo}
                     onChange={(e) => { handleChange(e); clearFieldError('mpesaReceiptNo'); }}
+                    onBlur={() => checkFormDuplicate(form.mpesaReceiptNo, 'mpesaReceiptNo')}
                     placeholder="e.g. REC-98234"
-                    error={fieldErrors.mpesaReceiptNo}
+                    error={fieldErrors.mpesaReceiptNo || (formDuplicateError && form.mpesaReceiptNo ? formDuplicateError : undefined)}
                   />
                 )}
 
@@ -1089,6 +1149,7 @@ export default function Expenses() {
               { key: 'paymentMethod', label: 'Method' },
               { key: 'status',        label: 'Status' },
               { key: 'recordedBy',    label: 'Recorded By', align: 'center' },
+              { key: 'actions',       label: 'Actions',    align: 'center' },
             ]}
             data={expenses}
             loading={loading}
@@ -1127,11 +1188,50 @@ export default function Expenses() {
                     ? `${row.recordedByUser.firstName || ''} ${row.recordedByUser.lastName || ''}`.trim()
                     : '—'}
                 </td>
+                <td className="px-6 py-4 text-center">
+                  <div className="flex items-center justify-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setEditingExpense(row)}
+                      className="p-1.5 rounded-lg text-primary hover:bg-primary-container hover:text-on-primary-container transition-colors"
+                      title="Edit expense"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 18 }}>edit</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(row.id)}
+                      className="p-1.5 rounded-lg text-error hover:bg-error-container hover:text-on-error-container transition-colors"
+                      title="Delete expense"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 18 }}>delete</span>
+                    </button>
+                  </div>
+                </td>
               </tr>
             )}
           />
         </div>
       )}
+
+      {/* ── Edit Overlay ── */}
+      <ExpenseEditOverlay
+        isOpen={!!editingExpense}
+        expense={editingExpense}
+        onClose={() => setEditingExpense(null)}
+        onSave={handleEditExpense}
+      />
+
+      {/* ── Delete Confirmation Dialog ── */}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Delete Expense"
+        message="Are you sure you want to delete this expense record? This action cannot be undone."
+        confirmText={deleting ? 'Deleting...' : 'Delete'}
+        danger
+        onConfirm={confirmDelete}
+        onClose={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

@@ -99,6 +99,12 @@ async function create(req, res) {
     return success(res, { offering }, 201);
   } catch (err) {
     console.error('[offerings.create] error:', err);
+    if (err.code === 'DUPLICATE_MPESA') {
+      return error(res, 'This M-Pesa receipt number has already been recorded.', 409, 'DUPLICATE_MPESA');
+    }
+    if (err.code === 'DUPLICATE_CHEQUE') {
+      return error(res, 'This cheque number has already been recorded.', 409, 'DUPLICATE_CHEQUE');
+    }
     return error(res, 'Failed to create offering.', 500, 'SERVER_ERROR');
   }
 }
@@ -115,6 +121,12 @@ async function update(req, res) {
     return success(res, { offering });
   } catch (err) {
     console.error('[offerings.update] error:', err);
+    if (err.code === 'DUPLICATE_MPESA') {
+      return error(res, 'This M-Pesa receipt number has already been recorded.', 409, 'DUPLICATE_MPESA');
+    }
+    if (err.code === 'DUPLICATE_CHEQUE') {
+      return error(res, 'This cheque number has already been recorded.', 409, 'DUPLICATE_CHEQUE');
+    }
     return error(res, 'Failed to update offering.', 500, 'SERVER_ERROR');
   }
 }
@@ -133,4 +145,33 @@ async function remove(req, res) {
   }
 }
 
-module.exports = { list, summary, yearlySummary, create, update, remove };
+async function checkDuplicate(req, res) {
+  try {
+    const { mpesaReceiptNo, chequeNumber, excludeId } = req.query;
+    
+    if (!mpesaReceiptNo && !chequeNumber) {
+      return error(res, 'Provide mpesaReceiptNo or chequeNumber to check.', 400, 'VALIDATION_ERROR');
+    }
+
+    const existing = await service.checkOfferingDuplicate({ 
+      mpesaReceiptNo: mpesaReceiptNo || null,
+      chequeNumber: chequeNumber || null,
+      excludeId: excludeId || null,
+    });
+
+    if (existing) {
+      return res.status(200).json({ 
+        duplicate: true, 
+        message: 'This receipt/cheque number already exists.',
+        existingId: existing.id,
+      });
+    }
+
+    return res.status(200).json({ duplicate: false });
+  } catch (err) {
+    console.error('[offerings.checkDuplicate] error:', err);
+    return error(res, 'Duplicate check failed.', 500, 'SERVER_ERROR');
+  }
+}
+
+module.exports = { list, summary, yearlySummary, create, update, remove, checkDuplicate };

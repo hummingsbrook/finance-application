@@ -8,8 +8,10 @@ import Card from '../../components/ui/Card';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import KpiCard from '../../components/ui/KpiCard';
 import UniversalTable from '../../components/ui/UniversalTable';
+import TitheEditOverlay from '../../components/ui/TitheEditOverlay';
 import ReactECharts from 'echarts-for-react';
 import { useFormValidation } from '../../hooks/useFormValidation';
+import useDuplicateCheck from '../../hooks/useDuplicateCheck';
 
 const TABS = [
   { key: 'record', label: 'Record Tithe', icon: 'add_circle' },
@@ -71,6 +73,10 @@ export default function Tithes() {
 
   const { fieldErrors, validate, clearFieldError, clearAllErrors } = useFormValidation();
 
+  // Real-time duplicate check for M-Pesa receipt & cheque numbers in the Record tab form.
+  // The edit overlay has its own instance of this hook (with excludeId).
+  const { duplicateError: formDuplicateError, checkDuplicate: checkFormDuplicate, clearDuplicateError: clearFormDuplicateError } = useDuplicateCheck('tithes');
+
   // ─── Scroll preservation (prevents the page jumping to top on filter change) ───
   const saveScroll    = () => document.getElementById('main-scroll')?.scrollTop ?? 0;
   const restoreScroll = (pos) => {
@@ -84,9 +90,8 @@ export default function Tithes() {
   // Yearly summary state — fetched separately when in Yearly mode
   const [yearlySummary, setYearlySummary] = useState(null);
 
-  // Edit state
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({});
+  // Edit overlay state — drives TitheEditOverlay
+  const [editingTithe, setEditingTithe] = useState(null);
 
   // Delete confirmation state — drives the ConfirmDialog.
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -203,6 +208,11 @@ export default function Tithes() {
   // ─── Record tab: form handlers ───
   const handleFormChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    // Clear duplicate-check error whenever the user edits either the M-Pesa
+    // receipt or cheque number — a fresh onBlur will re-validate.
+    if (e.target.name === 'mpesaReceiptNo' || e.target.name === 'chequeNumber') {
+      clearFormDuplicateError();
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -223,6 +233,14 @@ export default function Tithes() {
     }
     if (!validate(errors)) return;
 
+    // Block submit if a duplicate-check error is currently active for either field.
+    // The server will catch any race condition on create, but this prevents
+    // the user from submitting an obviously-duplicate value.
+    if (formDuplicateError) {
+      showError(formDuplicateError);
+      return;
+    }
+
     setSubmitting(true);
     setSubmitSuccess(false);
     try {
@@ -239,6 +257,7 @@ export default function Tithes() {
       });
       setSubmitSuccess(true);
       clearAllErrors();
+      clearFormDuplicateError();
       setForm({
         contributorName: '',
         amount: '',
@@ -279,54 +298,20 @@ export default function Tithes() {
     }
   };
 
-  // ─── Records tab: inline edit handlers ───
-  const handleEditClick = (t) => {
-    setEditingId(t.id);
-    const method = (t.paymentMethod || 'CASH').toLowerCase();
-    setEditForm({
-      contributorName: t.contributorName || '',
-      amount: t.amount != null ? String(t.amount) : '',
-      date: t.date ? t.date.split('T')[0] : '',
-      paymentMethod: method === 'bank_transfer' ? 'bank' : method,
-      mpesaReceiptNo: t.mpesaReceiptNo || '',
-      bankName: t.bankName || '',
-      chequeNumber: t.chequeNumber || '',
-      idNumber: t.idNumber || '',
-      notes: t.notes || '',
-      status: t.status || 'CONFIRMED',
-    });
-  };
-
-  const handleEditChange = (e) => {
-    setEditForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const handleEditSave = async (id) => {
+  // ─── Records tab: edit overlay handler (full-detail modal) ───
+  // Opens TitheEditOverlay with the row pre-populated; the overlay owns its
+  // internal form state and calls back into `handleEditTithe` on save.
+  const handleEditTithe = useCallback(async (id, payload) => {
     try {
-      await api.put(`/tithes/${id}`, {
-        contributorName: editForm.contributorName,
-        amount: parseFloat(editForm.amount),
-        date: editForm.date,
-        paymentMethod: editForm.paymentMethod === 'bank' ? 'BANK_TRANSFER' : editForm.paymentMethod.toUpperCase(),
-        mpesaReceiptNo: editForm.mpesaReceiptNo || null,
-        bankName: editForm.bankName || null,
-        chequeNumber: editForm.chequeNumber || null,
-        idNumber: editForm.idNumber || null,
-        notes: editForm.notes || null,
-      });
-      setEditingId(null);
-      setEditForm({});
+      await api.put(`/tithes/${id}`, payload);
       fetchTithesList();
       fetchSummary();
+      fetchRecentTithes();
     } catch (err) {
-      showError(err?.response?.data?.message || 'Failed to update tithe');
+      showError(err?.response?.data?.message || 'Failed to update tithe.');
+      throw err; // Re-throw so the overlay doesn't close on error
     }
-  };
-
-  const handleEditCancel = () => {
-    setEditingId(null);
-    setEditForm({});
-  };
+  }, [fetchTithesList, fetchSummary, fetchRecentTithes, showError]);
 
   // ─── Chart helpers ───
   // Monthly: last 6 months from summary
@@ -583,9 +568,10 @@ export default function Tithes() {
                       name="mpesaReceiptNo"
                       value={form.mpesaReceiptNo}
                       onChange={(e) => { handleFormChange(e); clearFieldError('mpesaReceiptNo'); }}
+                      onBlur={() => checkFormDuplicate(form.mpesaReceiptNo, 'mpesaReceiptNo')}
                       placeholder="e.g. RJH8945KL3"
                       className="uppercase"
-                      error={fieldErrors.mpesaReceiptNo}
+                      error={fieldErrors.mpesaReceiptNo || (formDuplicateError && form.mpesaReceiptNo ? formDuplicateError : undefined)}
                     />
                   </div>
                 )}
@@ -609,10 +595,11 @@ export default function Tithes() {
                         name="chequeNumber"
                         value={form.chequeNumber}
                         onChange={(e) => { handleFormChange(e); clearFieldError('chequeNumber'); }}
+                        onBlur={() => checkFormDuplicate(form.chequeNumber, 'chequeNumber')}
                         placeholder="e.g. 000123456"
                         icon="receipt"
                         required
-                        error={fieldErrors.chequeNumber}
+                        error={fieldErrors.chequeNumber || (formDuplicateError && form.chequeNumber ? formDuplicateError : undefined)}
                       />
                     </div>
                     <Input
@@ -1119,155 +1106,68 @@ export default function Tithes() {
                     <span className="text-on-surface-variant/50">({totalRows} records)</span>
                   </span>
                 }
-                renderRow={(t, idx) => {
-                  if (editingId === t.id) {
-                    // ─── EDIT ROW ───
-                    return (
-                      <tr key={t.id} className="border-b border-outline-variant/30">
-                        <td className="px-6 py-4">
-                          <input
-                            type="date"
-                            name="date"
-                            value={editForm.date}
-                            onChange={handleEditChange}
-                            className="w-full px-3 py-1.5 border rounded-lg text-body-sm text-on-surface outline-none border-outline-variant focus:border-secondary"
-                          />
-                        </td>
-                        <td className="px-6 py-4">
-                          <input
-                            type="text"
-                            name="notes"
-                            value={editForm.notes}
-                            onChange={handleEditChange}
-                            placeholder="Building, Standard..."
-                            className="w-full px-3 py-1.5 border rounded-lg text-body-sm text-on-surface outline-none border-outline-variant focus:border-secondary"
-                          />
-                        </td>
-                        <td className="px-6 py-4">
-                          <input
-                            type="number"
-                            name="amount"
-                            value={editForm.amount}
-                            onChange={handleEditChange}
-                            className="w-full px-3 py-1.5 border rounded-lg text-body-sm text-on-surface text-right outline-none border-outline-variant focus:border-secondary"
-                          />
-                        </td>
-                        <td className="px-6 py-4">
-                          {/* Compact payment method toggle */}
-                          <div className="flex p-0.5 bg-surface-container rounded-lg">
-                            {['cash', 'mpesa', 'bank'].map((method) => (
-                              <button
-                                key={method}
-                                type="button"
-                                onClick={() => setEditForm((p) => ({ ...p, paymentMethod: method }))}
-                                className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${
-                                  editForm.paymentMethod === method
-                                    ? 'bg-surface-container-lowest text-primary shadow-sm'
-                                    : 'text-on-surface-variant'
-                                }`}
-                              >
-                                {method === 'cash' ? 'Cash' : method === 'mpesa' ? 'M-Pesa' : 'Bank'}
-                              </button>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <input
-                            type="text"
-                            name="contributorName"
-                            value={editForm.contributorName}
-                            onChange={handleEditChange}
-                            className="w-full px-3 py-1.5 border rounded-lg text-body-sm text-on-surface outline-none border-outline-variant focus:border-secondary"
-                          />
-                        </td>
-                        <td className="px-6 py-4">
-                          {editForm.paymentMethod === 'mpesa' && (
-                            <input
-                              type="text"
-                              name="mpesaReceiptNo"
-                              value={editForm.mpesaReceiptNo}
-                              onChange={handleEditChange}
-                              placeholder="Receipt #"
-                              className="w-full px-3 py-1.5 border rounded-lg text-body-sm text-on-surface outline-none border-outline-variant focus:border-secondary"
-                            />
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => handleEditSave(t.id)}
-                              className="p-2 hover:bg-surface-container-high rounded-lg text-secondary"
-                              title="Save"
-                            >
-                              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>check</span>
-                            </button>
-                            <button
-                              onClick={handleEditCancel}
-                              className="p-2 hover:bg-error-container/20 rounded-lg text-error"
-                              title="Cancel"
-                            >
-                              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>close</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
-
-                  // ─── DISPLAY ROW ───
-                  return (
-                    <tr
-                      key={t.id}
-                      className={`hover:bg-surface-container transition-colors ${
-                        idx % 2 === 1 ? 'bg-surface-container-low/30' : ''
-                      }`}
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap text-body-md text-on-surface">
-                        {formatDate(t.date)}
-                      </td>
-                      <td className="px-6 py-4">
-                        {categoryBadge(t.notes)}
-                      </td>
-                      <td className="px-6 py-4 text-right font-bold text-primary text-body-md whitespace-nowrap">
-                        {formatNumberTwoDecimals(t.amount)}
-                      </td>
-                      <td className="px-6 py-4 text-body-md text-on-surface">
-                        {sourceLabel(t.paymentMethod)}
-                      </td>
-                      <td className="px-6 py-4 font-medium text-body-md text-on-surface">
-                        {t.contributorName}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-body-sm text-on-surface-variant truncate block max-w-[200px]">
-                          {t.notes || '—'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => handleEditClick(t)}
-                            className="p-2 hover:bg-surface-container-high rounded-lg text-primary"
-                            title="Edit"
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>edit</span>
-                          </button>
-                          <button
-                            onClick={() => handleDelete(t.id)}
-                            className="p-2 hover:bg-error-container/20 rounded-lg text-error"
-                            title="Delete"
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>delete</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }}
+                renderRow={(t, idx) => (
+                  <tr
+                    key={t.id}
+                    className={`hover:bg-surface-container transition-colors ${
+                      idx % 2 === 1 ? 'bg-surface-container-low/30' : ''
+                    }`}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-body-md text-on-surface">
+                      {formatDate(t.date)}
+                    </td>
+                    <td className="px-6 py-4">
+                      {categoryBadge(t.notes)}
+                    </td>
+                    <td className="px-6 py-4 text-right font-bold text-primary text-body-md whitespace-nowrap">
+                      {formatNumberTwoDecimals(t.amount)}
+                    </td>
+                    <td className="px-6 py-4 text-body-md text-on-surface">
+                      {sourceLabel(t.paymentMethod)}
+                    </td>
+                    <td className="px-6 py-4 font-medium text-body-md text-on-surface">
+                      {t.contributorName}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-body-sm text-on-surface-variant truncate block max-w-[200px]">
+                        {t.notes || '—'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setEditingTithe(t)}
+                          className="p-2 hover:bg-surface-container-high rounded-lg text-primary"
+                          title="Edit"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(t.id)}
+                          className="p-2 hover:bg-error-container/20 rounded-lg text-error"
+                          title="Delete"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>delete</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
               />
             </>
           )}
         </div>
       )}
+
+      {/* Edit overlay — full-detail modal driven by editingTithe */}
+      <TitheEditOverlay
+        isOpen={!!editingTithe}
+        tithe={editingTithe}
+        onClose={() => setEditingTithe(null)}
+        onSave={handleEditTithe}
+      />
 
       {/* Delete confirmation dialog */}
       <ConfirmDialog

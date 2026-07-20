@@ -1,36 +1,41 @@
 import { useState, useEffect } from 'react';
 import Input from './Input';
+import { EXPENSE_CATEGORIES, CATEGORY_LABELS, SALARY_TYPES, SALARY_TYPE_LABELS } from '../../constants/expenseCategories';
 import useDuplicateCheck from '../../hooks/useDuplicateCheck';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const SERVICE_TYPES = ['Sunday Main', 'Sunday School'];
 
-export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave }) {
+export default function ExpenseEditOverlay({ isOpen, expense, onClose, onSave }) {
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
-  const { duplicateError, checkDuplicate, clearDuplicateError } = useDuplicateCheck('offerings');
+  const { duplicateError, checkDuplicate, clearDuplicateError } = useDuplicateCheck('expenses');
 
+  // Populate form whenever the overlay opens or the expense changes
   useEffect(() => {
-    if (isOpen && offering) {
+    if (isOpen && expense) {
+      const method = (expense.paymentMethod || 'CASH').toLowerCase();
       setForm({
-        contributorName: offering.contributorName || '',
-        amount: offering.amount != null ? String(offering.amount) : '',
-        date: offering.date ? offering.date.split('T')[0] : '',
-        serviceType: offering.serviceType || 'Sunday Main',
-        paymentMethod: (offering.paymentMethod || 'CASH').toLowerCase(),
-        mpesaReceiptNo: offering.mpesaReceiptNo || '',
-        bankName: offering.bankName || '',
-        chequeNumber: offering.chequeNumber || '',
-        idNumber: offering.idNumber || '',
-        notes: offering.notes || '',
-        status: offering.status || 'CONFIRMED',
+        description: expense.description || '',
+        amount: expense.amount != null ? String(expense.amount) : '',
+        date: expense.date ? expense.date.split('T')[0] : '',
+        category: expense.category || '',
+        salaryType: expense.salaryType || '',
+        paymentMethod: method === 'bank_transfer' ? 'bank_transfer' : method,
+        recipientName: expense.recipientName || '',
+        mpesaReceiptNo: expense.mpesaReceiptNo || '',
+        bankName: expense.bankName || '',
+        accountNo: expense.accountNo || '',
+        idNumber: expense.idNumber || '',
+        notes: expense.notes || '',
+        status: expense.status || 'CONFIRMED',
       });
       setErrors({});
       clearDuplicateError();
     }
-  }, [isOpen, offering, clearDuplicateError]);
+  }, [isOpen, expense, clearDuplicateError]);
 
+  // Close on Escape key
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose(); };
     if (isOpen) window.addEventListener('keydown', handler);
@@ -45,15 +50,19 @@ export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave 
 
   const validate = () => {
     const errs = {};
-    if (!form.contributorName?.trim()) errs.contributorName = 'Contributor name is required.';
+    if (!form.description?.trim()) errs.description = 'Description is required.';
     const amt = parseFloat(form.amount);
     if (!form.amount || isNaN(amt) || amt <= 0) errs.amount = 'Enter a valid amount greater than 0.';
     if (!form.date) errs.date = 'Date is required.';
+    if (!form.category) errs.category = 'Please select a category.';
+    if (form.category === 'SALARIES' && !form.salaryType) {
+      errs.salaryType = 'Please select a salary type.';
+    }
     if (form.paymentMethod === 'mpesa' && !form.mpesaReceiptNo?.trim())
       errs.mpesaReceiptNo = 'M-Pesa receipt number is required.';
     if (form.paymentMethod === 'bank_transfer') {
       if (!form.bankName?.trim()) errs.bankName = 'Bank name is required.';
-      if (!form.chequeNumber?.trim()) errs.chequeNumber = 'Cheque number is required.';
+      if (!form.accountNo?.trim()) errs.accountNo = 'Account number is required.';
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -63,15 +72,17 @@ export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave 
     if (!validate()) return;
     setSaving(true);
     try {
-      await onSave(offering.id, {
-        contributorName: form.contributorName,
+      await onSave(expense.id, {
+        description: form.description,
         amount: parseFloat(form.amount),
         date: form.date,
-        serviceType: form.serviceType,
-        paymentMethod: form.paymentMethod.toUpperCase(),
+        category: form.category,
+        salaryType: form.category === 'SALARIES' ? form.salaryType : null,
+        paymentMethod: form.paymentMethod === 'bank_transfer' ? 'BANK_TRANSFER' : form.paymentMethod.toUpperCase(),
+        recipientName: form.recipientName || null,
         mpesaReceiptNo: form.mpesaReceiptNo || null,
         bankName: form.bankName || null,
-        chequeNumber: form.chequeNumber || null,
+        accountNo: form.accountNo || null,
         idNumber: form.idNumber || null,
         notes: form.notes || null,
         status: form.status,
@@ -98,18 +109,18 @@ export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave 
         className="relative bg-white w-full max-w-2xl max-h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
-        aria-label="Edit Offering Record"
+        aria-label="Edit Expense Record"
       >
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-primary-container flex items-center justify-center">
-              <span className="material-symbols-outlined text-on-primary-container" style={{ fontSize: 20 }}>
+            <div className="w-9 h-9 rounded-xl bg-tertiary-container flex items-center justify-center">
+              <span className="material-symbols-outlined text-on-tertiary-container" style={{ fontSize: 20 }}>
                 edit
               </span>
             </div>
             <div>
-              <h2 className="text-title-lg font-bold text-on-surface">Edit Offering Record</h2>
+              <h2 className="text-title-lg font-bold text-on-surface">Edit Expense Record</h2>
               {dateLabel && (
                 <p className="text-body-sm text-on-surface-variant">{dateLabel}</p>
               )}
@@ -128,37 +139,16 @@ export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave 
         {/* ── Scrollable body ── */}
         <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-6 space-y-6">
 
-          {/* Service Type */}
-          <div className="space-y-2">
-            <label className="text-label-md text-on-surface-variant block">Service Type</label>
-            <div className="grid grid-cols-2 gap-2 p-1 bg-surface-container rounded-xl">
-              {SERVICE_TYPES.map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => setForm((p) => ({ ...p, serviceType: st }))}
-                  className={`py-3 rounded-lg text-label-md transition-all ${
-                    form.serviceType === st
-                      ? 'bg-secondary-container text-on-secondary-container shadow-sm font-bold'
-                      : 'text-on-surface-variant hover:bg-surface-container-high'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Contributor */}
+          {/* Description */}
           <Input
-            label="Contributor Name"
-            name="contributorName"
-            value={form.contributorName}
+            label="Description"
+            name="description"
+            value={form.description}
             onChange={handleChange}
-            placeholder="Full name"
-            icon="person"
+            placeholder="e.g. Kenya Power, Alpha Supplies"
+            icon="receipt_long"
             required
-            error={errors.contributorName}
+            error={errors.description}
           />
 
           {/* Amount + Date */}
@@ -174,7 +164,7 @@ export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave 
               error={errors.amount}
             />
             <Input
-              label="Service Date"
+              label="Transaction Date"
               name="date"
               type="date"
               value={form.date}
@@ -184,14 +174,68 @@ export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave 
             />
           </div>
 
-          {/* ID Number */}
+          {/* Category */}
+          <div className="space-y-2">
+            <label className="text-label-md text-on-surface-variant block">Expense Category</label>
+            <div className="relative">
+              <select
+                name="category"
+                value={form.category}
+                onChange={handleChange}
+                className={`w-full px-4 py-2.5 bg-surface-container-lowest border rounded-lg text-body-md text-on-surface outline-none transition-colors appearance-none ${
+                  errors.category ? 'border-error focus:border-error focus:ring-1 focus:ring-error' : 'border-outline-variant focus:border-secondary focus:ring-1 focus:ring-secondary'
+                }`}
+              >
+                <option value="">Select category</option>
+                {EXPENSE_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                ))}
+              </select>
+              <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant" style={{ fontSize: 20 }}>
+                expand_more
+              </span>
+            </div>
+            {errors.category && (
+              <p className="text-[12px] text-error mt-1">{errors.category}</p>
+            )}
+          </div>
+
+          {/* Salary Type — only shown when category is SALARIES */}
+          {form.category === 'SALARIES' && (
+            <div className="space-y-2">
+              <label className="text-label-md text-on-surface-variant block">Salary Type</label>
+              <div className="relative">
+                <select
+                  name="salaryType"
+                  value={form.salaryType}
+                  onChange={handleChange}
+                  className={`w-full px-4 py-2.5 bg-surface-container-lowest border rounded-lg text-body-md text-on-surface outline-none transition-colors appearance-none ${
+                    errors.salaryType ? 'border-error focus:border-error focus:ring-1 focus:ring-error' : 'border-outline-variant focus:border-secondary focus:ring-1 focus:ring-secondary'
+                  }`}
+                >
+                  <option value="">Select salary type</option>
+                  {SALARY_TYPES.map((t) => (
+                    <option key={t} value={t}>{SALARY_TYPE_LABELS[t]}</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant" style={{ fontSize: 20 }}>
+                  expand_more
+                </span>
+              </div>
+              {errors.salaryType && (
+                <p className="text-[12px] text-error mt-1">{errors.salaryType}</p>
+              )}
+            </div>
+          )}
+
+          {/* Recipient Name */}
           <Input
-            label="ID Number (Optional)"
-            name="idNumber"
-            value={form.idNumber}
+            label="Recipient Name (Optional)"
+            name="recipientName"
+            value={form.recipientName}
             onChange={handleChange}
-            placeholder="National ID or Passport number"
-            icon="badge"
+            placeholder="e.g. Kenya Power, vendor name"
+            icon="person"
           />
 
           {/* Payment Method */}
@@ -226,8 +270,8 @@ export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave 
               name="mpesaReceiptNo"
               value={form.mpesaReceiptNo}
               onChange={handleChange}
-              onBlur={() => checkDuplicate(form.mpesaReceiptNo, 'mpesaReceiptNo', offering?.id)}
-              placeholder="e.g. RJH8945KL3"
+              onBlur={() => checkDuplicate(form.mpesaReceiptNo, 'mpesaReceiptNo', expense?.id)}
+              placeholder="e.g. REC-98234"
               error={errors.mpesaReceiptNo || (duplicateError && form.mpesaReceiptNo ? duplicateError : undefined)}
             />
           )}
@@ -242,25 +286,34 @@ export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave 
                   name="bankName"
                   value={form.bankName}
                   onChange={handleChange}
-                  placeholder="e.g. Equity Bank"
+                  placeholder="e.g. KCB, Equity, NCBA"
                   icon="account_balance"
                   required
                   error={errors.bankName}
                 />
                 <Input
-                  label="Cheque Number"
-                  name="chequeNumber"
-                  value={form.chequeNumber}
+                  label="Account Number"
+                  name="accountNo"
+                  value={form.accountNo}
                   onChange={handleChange}
-                  onBlur={() => checkDuplicate(form.chequeNumber, 'chequeNumber', offering?.id)}
-                  placeholder="e.g. 000123456"
-                  icon="receipt"
+                  placeholder="e.g. 1234567890"
+                  icon="credit_card"
                   required
-                  error={errors.chequeNumber || (duplicateError && form.chequeNumber ? duplicateError : undefined)}
+                  error={errors.accountNo}
                 />
               </div>
             </div>
           )}
+
+          {/* ID Number */}
+          <Input
+            label="ID Number (Optional)"
+            name="idNumber"
+            value={form.idNumber}
+            onChange={handleChange}
+            placeholder="National ID or Passport number"
+            icon="badge"
+          />
 
           {/* Status */}
           <div className="space-y-2">
@@ -269,7 +322,8 @@ export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave 
               {[
                 { value: 'CONFIRMED', label: 'Confirmed' },
                 { value: 'PENDING', label: 'Pending' },
-                { value: 'REVERSED', label: 'Reversed' },
+                { value: 'REJECTED', label: 'Rejected' },
+                { value: 'FAILED', label: 'Failed' },
               ].map(({ value, label }) => (
                 <button
                   key={value}
@@ -277,7 +331,7 @@ export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave 
                   onClick={() => setForm((p) => ({ ...p, status: value }))}
                   className={`flex-1 px-3 py-2 rounded-lg font-bold text-label-sm transition-all ${
                     form.status === value
-                      ? value === 'REVERSED'
+                      ? value === 'REJECTED' || value === 'FAILED'
                         ? 'bg-error text-on-error shadow-sm'
                         : value === 'PENDING'
                         ? 'bg-tertiary-container text-on-tertiary-container shadow-sm'
@@ -298,7 +352,7 @@ export default function OfferingEditOverlay({ isOpen, offering, onClose, onSave 
               name="notes"
               value={form.notes}
               onChange={handleChange}
-              placeholder="Brief details about the offering..."
+              placeholder="Additional details about this expense..."
               rows={3}
               className="w-full px-4 py-2.5 bg-surface-container-lowest border rounded-lg text-body-md text-on-surface placeholder:text-on-surface-variant/50 outline-none transition-colors border-outline-variant focus:border-secondary focus:ring-1 focus:ring-secondary resize-none"
             />

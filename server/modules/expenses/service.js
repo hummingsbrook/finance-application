@@ -357,6 +357,16 @@ async function getExpenseYearlySummary({ year }) {
 async function createExpense(data) {
   const amount = roundMoney(data.amount);
 
+  // ── Uniqueness check (server-side source of truth) ────────────────────────────
+  // Expenses track M-Pesa receipts only (no cheque number); account numbers are
+  // not unique per module, so they are intentionally not checked here.
+  if (data.mpesaReceiptNo) {
+    const existing = await prisma.expense.findFirst({ where: { mpesaReceiptNo: data.mpesaReceiptNo } });
+    if (existing) {
+      throw Object.assign(new Error('Duplicate M-Pesa receipt number.'), { code: 'DUPLICATE_MPESA' });
+    }
+  }
+
   return prisma.expense.create({
     data: {
       description: data.description,
@@ -431,6 +441,16 @@ async function updateExpense(id, data) {
   if (data.status !== undefined && VALID_STATUSES.includes(data.status)) updateData.status = data.status;
   if (data.approvedBy !== undefined) updateData.approvedBy = data.approvedBy;
 
+  // ── Uniqueness check (exclude the record being updated) ───────────────────
+  if (data.mpesaReceiptNo) {
+    const existing = await prisma.expense.findFirst({
+      where: { mpesaReceiptNo: data.mpesaReceiptNo, NOT: { id } },
+    });
+    if (existing) {
+      throw Object.assign(new Error('Duplicate M-Pesa receipt number.'), { code: 'DUPLICATE_MPESA' });
+    }
+  }
+
   return prisma.expense.update({
     where: { id },
     data: updateData,
@@ -451,6 +471,27 @@ async function getExpenseById(id) {
   });
 }
 
+async function deleteExpense(id) {
+  return prisma.expense.delete({ where: { id } });
+}
+
+async function checkExpenseDuplicate(filters = {}) {
+  const { mpesaReceiptNo, excludeId } = filters;
+  const where = {};
+
+  if (mpesaReceiptNo) {
+    where.mpesaReceiptNo = mpesaReceiptNo;
+  } else {
+    return null;
+  }
+
+  if (excludeId) {
+    where.id = { not: excludeId };
+  }
+
+  return prisma.expense.findFirst({ where });
+}
+
 module.exports = {
   listExpenses,
   getExpenseSummary,
@@ -461,4 +502,6 @@ module.exports = {
   approveExpense,
   rejectExpense,
   getExpenseById,
+  deleteExpense,
+  checkExpenseDuplicate,
 };
