@@ -102,9 +102,17 @@ model User {
   phone           String?
   role            Role      @default(MANAGER)
   isActive        Boolean   @default(true)
-  lastLogin       DateTime?
+  lastLoginAt     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  // FIXED: C-3 — single-use password reset token (stored as SHA-256 hash)
+  passwordResetToken   String?   @unique
+  passwordResetExpiry  DateTime?
+
+  // FIXED: H-2 — account lockout after repeated failed logins
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
 
   // Relations
   tithes              Tithe[]
