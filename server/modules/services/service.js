@@ -46,6 +46,7 @@ async function createService(data) {
       notes: data.notes || null,
       status,
       isActive: data.isActive ?? true,
+      createdBy: data.createdBy,
     },
   });
 }
