@@ -208,6 +208,8 @@ model Harambee {
   description     String?
   targetAmount    Decimal        @db.Decimal(14, 2)
   currentAmount   Decimal        @default(0) @db.Decimal(14, 2)
+  startDate       DateTime?
+  endDate         DateTime?
   deadline        DateTime?
   status          HarambeeStatus @default(ACTIVE)
   createdBy       String
