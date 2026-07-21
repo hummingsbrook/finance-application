@@ -25,7 +25,7 @@ async function create(req, res) {
       return error(res, 'name, dayOfWeek, and time are required.', 400, 'VALIDATION_ERROR');
     }
 
-    const svc = await service.createService({ name, dayOfWeek, time, serviceDate, topic, speaker, programmer, leadMinistrant, reader, notes, status, isActive });
+    const svc = await service.createService({ name, dayOfWeek, time, serviceDate, topic, speaker, programmer, leadMinistrant, reader, notes, status, isActive, createdBy: req.user.id });
     return success(res, { service: svc }, 201);
   } catch (err) {
     console.error('[Services] create error:', err);
